@@ -1,38 +1,35 @@
-# Plan — Rebuild Grain Tracker v2 Frontend (GTv8Beta)
+# Plan — Grain Tracker v2 · Scale Dashboard Full Rebuild
 
-Goal: reconstruct the missing frontend (`app/src/**`: pages, components, providers, hooks, lib)
-so `npm run build` passes and the app runs against the existing Hono/tRPC/MySQL backend.
-Deliverable: files pushed to github.com/kurtimas/GTv8Beta (branch main), plus VPS rebuild commands.
+## Source of truth
+`/mnt/agents/temp/scale-dashboard-rebuild-spec.pdf` — complete rebuild spec (layout §5, design tokens §3, data layer §4, state machine §6, operator assists §7, keyboard/sound §8, checklist §9).
 
-## Stage 1 — Backend recon (Orchestrator, local)
-- Clone github.com/kurtimas/GTv8Beta to a local workspace.
-- Read the full backend surface: api/router.ts, coreRouter.ts, sheetsRouter.ts, peopleRouter.ts,
-  syncRouter.ts, context.ts, migrateOnBoot.ts, officeSync.ts; contracts/*.ts; db/schema.ts, seed.ts.
-- Extract the API contract spec: every tRPC procedure (name, input, output), types, enums,
-  business rules (bushel weights, moisture shrink, lot codes) -> `recon/api-surface.md`.
+## Stage 0 — Clarify scope (ask_user)
+- Backend scope: full-stack (Hono+tRPC+Drizzle) vs frontend with in-browser simulated data layer implementing the same trpc.* contract.
+- Skill to load: `vibecoding-webapp-swarm` (orchestration) before building.
 
-## Stage 2 — Frontend architecture (Orchestrator)
-- Load skill: vibecoding-webapp-swarm (React+TS+Tailwind+shadcn guidance).
-- Define file tree matching existing imports:
-  - src/providers/trpc.tsx (exports TRPCProvider; required by main.tsx)
-  - src/components/Layout.tsx, src/components/ui/* (shadcn, per info.md 40+ components)
-  - src/pages/{Dashboard,Sheets,Bins,People,Reports,NotFound}.tsx (required by App.tsx)
-  - src/hooks/useScale.ts (Web Serial API; 9600 8N1 continuous ASCII, per repo Startup Guide)
-  - src/lib/* (trpc client, utils, formatting)
-- Design tokens: low-saturation, warm, ample whitespace (no blue-purple gradients).
+## Stage 1 — Project scaffold & design shell
+- Skill: `vibecoding-webapp-swarm` (+ `webapp-building-swarm` as needed).
+- React 18 + TS + Vite + Tailwind + shadcn/ui primitives + lucide-react + sonner.
+- index.css design tokens: `--go`, `--live`, `--crit`, `--readout`, amber; `.gt-panel`, `.gt-eyebrow`, `.gt-led` variants, `.gt-scan`, tabular-nums mono, TestBadge, NodeToggle, fillTone helpers.
+- musepool plugin may be consulted for anti-slop design inspiration, but spec §3 design language (instrument panel, dark phosphor) wins on conflict.
 
-## Stage 3 — Swarm build (coder subagents, sequential batches)
-- Batch A: foundation — lib/utils, trpc client + provider, shadcn ui set, types re-exports.
-- Batch B: Layout + Dashboard (scale readout via useScale, open sheets queue) + Bins page.
-- Batch C: Sheets (new weight sheet, weigh in/out, corrections) + People (farmers/landlords/lots).
-- Batch D: Reports (daily report, close day) + NotFound + polish.
-- Each batch must typecheck against backend contracts; no backend changes.
+## Stage 2 — Data layer + scale hardware
+- useScale hook: Web Serial parser (last-number-on-line, 9600 8N1), simulator (base ± noise every 400 ms), stability window (8 readings, ≥6, max−min ≤ 25 lbs), manual-entry fallback.
+- Data layer per §4: sheets.open / core.bins.list / sheets.truckTares / sheets.list{limit:1} / sheets.dailyReport with 15 s polling; mutations sheets.create/weighFirst/weighSecond; invalidate-all after mutations; localStorage persistence (gt-sound, gt-autoprint, gt-ops-overview).
+- sound.ts (stableBeep 990 Hz/70 ms, captureBeep, warnBeep 220 Hz/250 ms), printTicket.ts.
 
-## Stage 4 — Local build gate (Orchestrator + verifier)
-- npm ci && npm run build in app/ must pass clean (vite build + esbuild boot bundle).
-- Fix-forward loop on any error until green.
+## Stage 3 — Dashboard layout (exact §5 order)
+Header (PageHeader) → error banner → bin levels strip → 3 quick StatCards → lg:grid-cols-5 work area:
+- LEFT (col-span-3): ScalePanel (LEDs, signal bars, readout w/ corner brackets + scanlines, serial error, simulator slider + quick-set) → manual entry → BIG WEIGH IN/OUT buttons (h-32/40, stage-gated, direction-aware labels) → operator toggles strip → selected-sheet context panel (LoadSlots, previous loads, next-load inputs, tare memory/est-net).
+- RIGHT (col-span-2): open sheets list (age borders, status line, DETAILS).
+→ Operations overview (collapsible, persisted): KPI strip ×5, hourly throughput chart, crop donut, bin board, activity feed.
 
-## Stage 5 — Ship (Orchestrator)
-- Push all new/changed files to GitHub (push_files, batched commits).
-- Hand user the VPS commands: git pull && docker compose up -d --build; verify
-  "[boot] database schema up to date" + http://<ip>:3000 Scale Dashboard.
+## Stage 4 — State machine + operator assists (§6–§7)
+Stage derivation (none/first/second), doWeigh with all guards: no-weight, truck-required, tare memory, tare-deviation >3% warn, duplicate-truck warn, bin auto-suggest, est-net, repeat-last-load, sheet-change prefill, auto-advance on 10/10, auto-print.
+
+## Stage 5 — Keyboard/sound/timing (§8) + dialogs (§5.7)
+Global keys (Space/Enter capture, N new sheet, guards), NewSheetDialog, SheetDetailDialog (void, grading, close sheet, reprint), TicketPrint (print-only, 150 ms delay).
+
+## Stage 6 — QA + delivery
+- Build passes, interactive smoke test of the full weigh in→out loop, warnings, shortcuts.
+- Deliver via `website_version_manager` build_version (type: static after build; or dynamic if real backend chosen).

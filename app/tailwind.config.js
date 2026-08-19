@@ -5,6 +5,10 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        go: "hsl(var(--go) / <alpha-value>)",
+        live: "hsl(var(--live) / <alpha-value>)",
+        crit: "hsl(var(--crit) / <alpha-value>)",
+        readout: "hsl(var(--readout) / <alpha-value>)",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -48,10 +52,6 @@ module.exports = {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        live: "hsl(var(--live))",
-        go: "hsl(var(--go))",
-        crit: "hsl(var(--crit))",
-        readout: "hsl(var(--readout))",
       },
       borderRadius: {
         xl: "calc(var(--radius) + 4px)",
