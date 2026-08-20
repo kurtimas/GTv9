@@ -7,7 +7,7 @@ IFS=$'\n\t'
 
 readonly SCRIPT_NAME="${0##*/}"
 readonly SCRIPT_VERSION="1.0.0"
-readonly GRAIN_URL_DEFAULT="https://graintrack.com/en/"
+readonly GRAIN_URL_DEFAULT="https://grain.kurt.wtf"
 
 LOG_FILE="/var/log/grain-track-ubuntu-bootstrap.log"
 GRAIN_URL="$GRAIN_URL_DEFAULT"

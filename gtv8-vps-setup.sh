@@ -46,20 +46,20 @@ IFS=$'\n\t'
 #===============================================================================
 
 # ---- App / repo --------------------------------------------------------------
-GIT_REPO_URL="https://github.com/kurtimas/GTv8Beta.git"
+GIT_REPO_URL="https://github.com/kurtimas/GTv9.git"
 GIT_BRANCH=""                        # empty = auto-detect default branch
-REPO_DIR="/opt/GTv8Beta"             # git clone location
-DEPLOY_DIR="/opt/gtv8"               # compose stack + .env + backups config
+REPO_DIR="/opt/GTv9"         # git clone location
+DEPLOY_DIR="/opt/gtv9"       # compose stack + .env + backups config
 SEED_DEMO="false"                    # "true" loads demo farmers/sheets (training)
 
 # ---- Domain / HTTPS (optional but recommended for the USB scale) -------------
-DOMAIN=""                            # e.g. scale.yourfarm.com  -> Caddy HTTPS
+DOMAIN="https://grain.kurt.wtf"                            # e.g. scale.yourfarm.com  -> Caddy HTTPS
                                      # Point the DNS A record at the VPS FIRST.
                                      # Empty = plain http://<ip>:3000
 
 # ---- Admin user --------------------------------------------------------------
 ADMIN_USER="vpsadmin"
-ADMIN_PASSWORD="ChangeMe!Str0ng"     # <<< CHANGE THIS before running
+ADMIN_PASSWORD="weliketoparty69"     # <<< CHANGE THIS before running
 
 # ---- GUI ---------------------------------------------------------------------
 INSTALL_GUI=true                     # XFCE4 + XRDP
@@ -71,8 +71,8 @@ SSH_PORT=22
 DISABLE_ROOT_SSH=true
 DISABLE_PASSWORD_SSH=false           # set true ONLY after your SSH key works!
 
+TIMEZONE="PT"                       # e.g. "America/Chicago"
 # ---- Misc --------------------------------------------------------------------
-TIMEZONE="UTC"                       # e.g. "America/Chicago"
 BACKUP_RETENTION_DAYS=14
 
 #===============================================================================
