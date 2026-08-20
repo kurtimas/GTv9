@@ -177,9 +177,11 @@ GIT_BRANCH=${GIT_BRANCH:-main}
 log "Branch: $GIT_BRANCH"
 
 if [[ -d "$REPO_DIR/.git" ]]; then
+    # Deployment clone is disposable: hard-align to the remote so a rewritten
+    # history or a previously patched Dockerfile can never break the update.
     git -C "$REPO_DIR" fetch --all
-    git -C "$REPO_DIR" checkout "$GIT_BRANCH"
-    git -C "$REPO_DIR" pull --ff-only origin "$GIT_BRANCH"
+    git -C "$REPO_DIR" checkout -f "$GIT_BRANCH"
+    git -C "$REPO_DIR" reset --hard "origin/$GIT_BRANCH"
 else
     git clone --branch "$GIT_BRANCH" --single-branch "$GIT_REPO_URL" "$REPO_DIR"
 fi
@@ -324,8 +326,8 @@ cat > /usr/local/sbin/grain-update <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 git -C $REPO_DIR fetch --all
-git -C $REPO_DIR checkout $GIT_BRANCH
-git -C $REPO_DIR pull --ff-only origin $GIT_BRANCH
+git -C $REPO_DIR checkout -f $GIT_BRANCH
+git -C $REPO_DIR reset --hard origin/$GIT_BRANCH
 cd $DEPLOY_DIR
 docker compose up -d --build
 docker image prune -f

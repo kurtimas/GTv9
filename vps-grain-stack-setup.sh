@@ -247,10 +247,12 @@ EOF
 fi
 
 if [[ -d "$APP_DIR/.git" ]]; then
-    log "Repo exists at $APP_DIR — pulling latest '$GIT_BRANCH'."
+    log "Repo exists at $APP_DIR — hard-aligning to remote '$GIT_BRANCH'."
+    # Deployment clone is disposable: hard-align so a rewritten remote history
+    # or locally patched files can never break a fast-forward update.
     git -C "$APP_DIR" fetch --all
-    git -C "$APP_DIR" checkout "$GIT_BRANCH"
-    git -C "$APP_DIR" pull --ff-only origin "$GIT_BRANCH"
+    git -C "$APP_DIR" checkout -f "$GIT_BRANCH"
+    git -C "$APP_DIR" reset --hard "origin/$GIT_BRANCH"
 else
     mkdir -p "$(dirname "$APP_DIR")"
     git clone --branch "$GIT_BRANCH" --single-branch "$GIT_REPO_URL" "$APP_DIR"
