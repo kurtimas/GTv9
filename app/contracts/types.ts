@@ -1,85 +1,123 @@
-import type {
-  sites,
-  farmers,
-  lots,
-  bins,
-  sheets,
-  loads,
-  activity,
-  Crop,
-} from "@db/schema";
+// Shared view types between backend responses and frontend components.
+// Dates arrive as Date instances via superjson.
 
-export type { Crop };
-export const CROP_TEST_WEIGHT: Record<Crop, number> = {
-  Corn: 56,
-  Soybeans: 60,
-  Wheat: 60,
-};
+/** One truck visit recorded on a weight sheet (a row of the paper sheet). */
+export interface LoadRow {
+  id: number;
+  sheetId: number;
+  loadNo: number;
+  truckId: string | null;
+  driverName: string | null;
+  binId: number | null;
+  grossLbs: number | null;
+  tareLbs: number | null;
+  netLbs: number | null;
+  grossAt: Date | null;
+  tareAt: Date | null;
+  moisturePct: number | null;
+  dockagePct: number | null;
+  testWeightLbs: number | null;
+  proteinPct: number | null;
+  shrinkPct: number | null;
+  grossBushels: number | null;
+  netBushels: number | null;
+  changeReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  // joined
+  binName: string | null;
+}
 
-export type Site = typeof sites.$inferSelect;
-export type Farmer = typeof farmers.$inferSelect;
-export type Lot = typeof lots.$inferSelect;
-export type Bin = typeof bins.$inferSelect;
-export type Sheet = typeof sheets.$inferSelect;
-export type Load = typeof loads.$inferSelect;
-export type Activity = typeof activity.$inferSelect;
-
-/** Load as sent to the client — decimal columns normalized to numbers. */
-export type ClientLoad = Omit<Load, "bushels" | "moisture" | "testWeight"> & {
-  bushels: number | null;
-  moisture: number | null;
-  testWeight: number | null;
-  binName?: string | null;
-};
-
-/** Open sheet with everything the dashboard needs. */
-export interface OpenSheet {
-  sheet: Sheet;
-  lot: Lot;
-  farmer: Farmer;
-  loads: ClientLoad[];
-  activeLoad: ClientLoad | null;
-  completedCount: number;
+/** A multi-load weight sheet tied to one lot. */
+export interface SheetRow {
+  id: number;
+  ticketNo: string;
+  siteId: number;
+  farmerId: number;
+  lotId: number | null;
+  landlordId: number | null;
+  crop: string;
+  direction: "INBOUND" | "OUTBOUND";
+  status: "OPEN" | "FULL" | "CLOSED";
+  closeReason: string | null;
+  maxLoads: number;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  closedAt: Date | null;
+  // joined
+  farmerName: string | null;
+  lotCode: string | null;
+  lotSplitPct: number | null;
+  lotStatus: "OPEN" | "CLOSED" | null;
+  landlordName: string | null;
+  siteName: string | null;
+  // load aggregates
+  loadCount: number;
+  completedLoads: number;
   netLbs: number;
-  bushels: number;
+  netBushels: number;
+  /** the load still waiting for its second weight, if any */
+  activeLoad: LoadRow | null;
+  /** truck of the most recent load — handy prefill for the next load */
   lastTruckId: string | null;
-  needsGrade: boolean;
+  /** present when the caller asked for loads (open queue / detail) */
+  loads?: LoadRow[];
 }
 
-export interface TruckTare {
-  truckId: string;
-  avgTareLbs: number;
-  loads: number;
+/** A load flattened with its sheet context — daily report ledger rows. */
+export interface ReportLoadRow {
+  id: number;
+  sheetId: number;
+  ticketNo: string; // sheet ticket + load suffix, e.g. T-00012-03
+  loadNo: number;
+  farmerName: string | null;
+  lotCode: string | null;
+  landlordName: string | null;
+  crop: string;
+  direction: "INBOUND" | "OUTBOUND";
+  status: "OPEN" | "COMPLETED"; // load-level: second weight captured?
+  truckId: string | null;
+  binName: string | null;
+  grossLbs: number | null;
+  tareLbs: number | null;
+  netLbs: number | null;
+  netBushels: number | null;
+  moisturePct: number | null;
+  createdAt: Date; // first-weight time (falls back to load creation)
 }
 
-export interface DailyReport {
-  inboundLbs: number;
-  inboundBu: number;
-  outboundLbs: number;
-  outboundBu: number;
-  loadsWeighedOut: number;
-  sheetsOpened: number;
-  onScaleCount: number;
-  binUtilization: { pct: number; totalLbs: number; binCount: number };
-  hourly: { hour: number; lbs: number; loads: number }[];
-  cropMix: { crop: Crop; bu: number }[];
+export interface SheetEventRow {
+  id: number;
+  sheetId: number;
+  loadId: number | null;
+  action: string;
+  detail: string | null;
+  createdAt: Date;
 }
 
-export interface SheetDetail {
-  sheet: Sheet;
-  lot: Lot;
-  farmer: Farmer;
-  site: Site;
-  loads: ClientLoad[];
+export interface LotRow {
+  id: number;
+  farmerId: number;
+  landlordId: number | null;
+  code: string;
+  crop: string;
+  landlordSplitPct: number;
+  status: "OPEN" | "CLOSED";
+  notes: string | null;
+  createdAt: Date;
+  closedAt: Date | null;
+  farmerName: string | null;
+  landlordName: string | null;
 }
 
-export interface WeighSecondResult {
-  netLbs: number;
-  bushels: number;
-  sheetFull: boolean;
+export interface BinRow {
+  id: number;
+  siteId: number;
+  name: string;
+  crop: string;
+  capacityLbs: number;
+  currentLbs: number;
+  createdAt: Date;
+  siteName: string | null;
 }
-
-export const TARE_TOLERANCE = 0.03;
-export const MAX_LOADS_PER_SHEET = 10;
-
-export * from "./errors";
