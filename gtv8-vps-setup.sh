@@ -49,7 +49,7 @@ IFS=$'\n\t'
 GIT_REPO_URL="https://github.com/kurtimas/GTv9.git"
 GIT_BRANCH=""                        # empty = auto-detect default branch
 REPO_DIR="/opt/GTv9"         # git clone location
-DEPLOY_DIR="/opt/gtv9"       # compose stack + .env + backups config
+DEPLOY_DIR="/opt/GTv9"       # compose stack + .env + backups config
 SEED_DEMO="false"                    # "true" loads demo farmers/sheets (training)
 
 # ---- Domain / HTTPS (optional but recommended for the USB scale) -------------
