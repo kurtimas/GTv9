@@ -57,6 +57,19 @@ apt-get install -y --no-install-recommends \
 
 timedatectl set-timezone "$TIMEZONE" || warn "Timezone '$TIMEZONE' not applied"
 
+# Ensure swap exists — mysql:8 plus the desktop GUI won't fit a small VPS without it.
+if ! swapon --show | grep -q .; then
+    if [[ ! -f /swapfile ]]; then
+        fallocate -l 2G /swapfile 2>/dev/null \
+            || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+        chmod 600 /swapfile
+        mkswap /swapfile >/dev/null
+    fi
+    swapon /swapfile 2>/dev/null || warn "Could not enable swap."
+    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    log "Swap enabled (2 GB) — small-VPS safety for MySQL."
+fi
+
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
@@ -242,6 +255,13 @@ services:
     image: mysql:8
     container_name: grain-mysql
     restart: unless-stopped
+    # Low-memory tuning so mysql:8 fits small VPSes that also run the XFCE/XRDP desktop.
+    command:
+      - --performance_schema=OFF
+      - --innodb_buffer_pool_size=128M
+      - --max_connections=40
+      - --key_buffer_size=8M
+      - --table_open_cache=200
     env_file: .env
     volumes:
       - mysql-data:/var/lib/mysql
@@ -250,6 +270,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      start_period: 60s
     networks: [grain-net]
 
   app:
