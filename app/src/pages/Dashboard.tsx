@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MapPin } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
@@ -237,6 +237,60 @@ interface SheetCardProps {
 function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
   const [truckId, setTruckId] = useState(sheet.lastTruckId ?? "");
   const [driverName, setDriverName] = useState("");
+  const [binChoice, setBinChoice] = useState("auto");
+
+  // Destination bin picker — bins at this sheet's location, matching crop
+  // first, then least-filled (mirrors the server's auto-pick order).
+  const binsQ = trpc.core.bins.list.useQuery(
+    { siteId: sheet.siteId },
+    { staleTime: 30_000 },
+  );
+  const siteBins = useMemo(() => {
+    const fill = (b: { currentLbs: number; capacityLbs: number }) =>
+      b.capacityLbs > 0 ? b.currentLbs / b.capacityLbs : 0;
+    return [...(binsQ.data ?? [])].sort((a, b) => {
+      const am = a.crop === sheet.crop ? 0 : 1;
+      const bm = b.crop === sheet.crop ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return fill(a) - fill(b);
+    });
+  }, [binsQ.data, sheet.crop]);
+  const chosenBinId = binChoice !== "auto" ? Number(binChoice) : undefined;
+  const binSelect = (
+    <div className="space-y-1">
+      <Label>Destination bin</Label>
+      <Select value={binChoice} onValueChange={setBinChoice}>
+        <SelectTrigger className="h-8 font-mono text-xs">
+          <SelectValue placeholder="Auto" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="auto" className="font-mono text-xs">
+            Auto — least-filled {sheet.crop} bin
+          </SelectItem>
+          {siteBins.map((b) => (
+            <SelectItem key={b.id} value={String(b.id)} className="font-mono text-xs">
+              {b.name} — {b.crop}
+              {b.capacityLbs > 0
+                ? ` · ${Math.round((b.currentLbs / b.capacityLbs) * 100)}% full`
+                : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {siteBins.length === 0 && !binsQ.isPending && (
+        <p className="font-mono text-[11px] text-muted-foreground">
+          No bins at this location — loads stay unassigned.
+        </p>
+      )}
+      {binChoice === "auto" && sheet.activeLoad?.binId != null && (
+        <p className="font-mono text-[11px] text-muted-foreground">
+          Picked at weigh-in:{" "}
+          {siteBins.find((b) => b.id === sheet.activeLoad?.binId)?.name ??
+            `bin #${sheet.activeLoad.binId}`}
+        </p>
+      )}
+    </div>
+  );
 
   const weighFirst = trpc.sheets.weighFirst.useMutation({
     onSuccess: (data, vars) => {
@@ -332,12 +386,14 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
                   weightLbs,
                   truckId: truckId.trim() || undefined,
                   driverName: driverName.trim() || undefined,
+                  binId: chosenBinId,
                 });
               }}
             >
               {outbound ? "WEIGH IN (EMPTY)" : "WEIGH IN"}
               {weightLbs != null ? ` — ${fmtLbs(weightLbs)} lb` : ""}
             </Button>
+            {binSelect}
           </>
         ) : (
           <>
@@ -350,12 +406,13 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
                 {fmtLbs(firstLbs)} lb
               </span>
             </div>
+            {binSelect}
             <Button
               className="h-14 w-full text-lg font-bold"
               disabled={!canWeigh}
               onClick={() => {
                 if (weightLbs == null) return;
-                weighSecond.mutate({ id: sheet.id, weightLbs });
+                weighSecond.mutate({ id: sheet.id, weightLbs, binId: chosenBinId });
               }}
             >
               WEIGH OUT{weightLbs != null ? ` — ${fmtLbs(weightLbs)} lb` : ""}
@@ -611,6 +668,7 @@ export default function Dashboard() {
   const invalidateSheets = () => {
     void utils.sheets.open.invalidate();
     void utils.sheets.list.invalidate();
+    void utils.core.bins.list.invalidate();
   };
 
   // Live scale/simulator readings win over the manual override.
