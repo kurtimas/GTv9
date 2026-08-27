@@ -3,6 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import mysql from "mysql2/promise";
 import { drizzle as drizzleMysql, type MySql2Database } from "drizzle-orm/mysql2";
+import { MySqlTimestamp } from "drizzle-orm/mysql-core";
 import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../db/schema";
 import * as sqliteSchema from "../../db/sqliteSchema";
@@ -208,13 +209,151 @@ function initSqlite(): Db {
   const file = path.join(dir, "grain-tracker-offline.db");
   const sqlite = new Database(file);
   sqlite.pragma("journal_mode = WAL");
+  // The MySQL schema's .defaultNow()/.onUpdateNow() columns make drizzle emit
+  // `now()` inside INSERT/UPDATE statements; SQLite has no such function.
+  // Register it to return epoch-ms, matching the INTEGER timestamp columns.
+  sqlite.function("now", () => Date.now());
+  patchAsyncTransactions(sqlite);
   for (const ddl of SQLITE_DDL) {
     sqlite.exec(ddl);
   }
+  patchTimestampColumnsForOffline();
   const sqliteDb = drizzleSqlite(sqlite, { schema: sqliteSchema });
   // Cast so all router call-sites typecheck against the MySQL db type.
-  return sqliteDb as unknown as Db;
+  return patchOfflineWrites(sqliteDb) as unknown as Db;
 }
+
+// ---------------------------------------------------------------------------
+// Offline write compatibility shim.
+//
+// Routers and the seed are written against the MySQL drizzle API:
+//   * inserts read back the new id via MySQL-only .$returningId()
+//   * TIMESTAMP columns (MySQL `timestamp` → JS Date) are passed as Date
+// The embedded SQLite database stores epoch-ms integers and better-sqlite3
+// refuses to bind Date objects, and its insert builders have .returning()
+// instead of $returningId(). Rather than forking every write call-site, the
+// offline handle (and every transaction handle handed out of it) is wrapped
+// so MySQL-style writes just work:
+//   * Date values inside .values()/.set() become epoch-ms integers
+//   * insert builders gain $returningId(), backed by SQLite RETURNING
+// ---------------------------------------------------------------------------
+function toEpochMs(value: unknown): unknown {
+  if (value instanceof Date) return value.getTime();
+  if (Array.isArray(value)) return value.map(toEpochMs);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toEpochMs(v)]));
+  }
+  return value;
+}
+
+/**
+ * MySqlTimestamp maps Date ⇄ "YYYY-MM-DD HH:MM:SS" strings for the MySQL
+ * wire protocol, but the offline database stores epoch-ms integers. Swap the
+ * two mapping directions while offline so writes bind numbers and reads come
+ * back as real Dates. MySQL is never used in the same process once the
+ * offline fallback is active, so the patch is inert on the MySQL path.
+ */
+function patchTimestampColumnsForOffline() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proto = MySqlTimestamp.prototype as any;
+  const origToDriver = proto.mapToDriverValue;
+  const origFromDriver = proto.mapFromDriverValue;
+  proto.mapToDriverValue = function (value: unknown) {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === "number") return value;
+    return origToDriver.call(this, value);
+  };
+  proto.mapFromDriverValue = function (value: unknown) {
+    if (typeof value === "number") return new Date(value);
+    return origFromDriver.call(this, value);
+  };
+}
+
+/**
+ * better-sqlite3's native transaction() rejects promise-returning callbacks,
+ * but the routers use `db.transaction(async (tx) => …)` (fine on MySQL). For
+ * async callbacks, drive BEGIN/COMMIT/ROLLBACK manually instead: every
+ * statement better-sqlite3 runs is synchronous, so awaits between them stay
+ * ordered on this single embedded connection. Async transactions are queued
+ * so they never overlap. Sync callbacks keep the native path, savepoints and
+ * all. The .deferred/.immediate/.exclusive variants drizzle selects on are
+ * aliased to the same implementation (BEGIN is fine for a local file DB).
+ */
+function patchAsyncTransactions(sqlite: InstanceType<typeof Database>) {
+  const nativeTransaction = sqlite.transaction.bind(sqlite);
+  let queue: Promise<unknown> = Promise.resolve();
+  sqlite.transaction = ((fn: (...args: unknown[]) => unknown) => {
+    if (fn.constructor?.name !== "AsyncFunction") return nativeTransaction(fn);
+    const run = async (...args: unknown[]) => {
+      sqlite.exec("BEGIN");
+      try {
+        const result = await fn(...args);
+        sqlite.exec("COMMIT");
+        return result;
+      } catch (err) {
+        try {
+          sqlite.exec("ROLLBACK");
+        } catch {
+          // transaction already unwound by the failure — nothing to roll back
+        }
+        throw err;
+      }
+    };
+    const wrapped = (...args: unknown[]) => {
+      const p = queue.then(() => run(...args));
+      queue = p.catch(() => {});
+      return p;
+    };
+    // better-sqlite3's transaction() exposes behavior variants that drizzle
+    // selects on; alias them (BEGIN is fine for a local file DB)
+    const variants = wrapped as typeof wrapped & {
+      default: typeof wrapped;
+      deferred: typeof wrapped;
+      immediate: typeof wrapped;
+      exclusive: typeof wrapped;
+    };
+    variants.default = wrapped;
+    variants.deferred = wrapped;
+    variants.immediate = wrapped;
+    variants.exclusive = wrapped;
+    return variants;
+    // the patched signature intentionally widens better-sqlite3's typing
+  }) as typeof sqlite.transaction;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- runtime shims over the
+ * MySQL-typed handle; kept loose on purpose (see block comment above) */
+function patchOfflineWrites(handle: any): any {
+  const insert = handle.insert.bind(handle);
+  handle.insert = (table: any) => {
+    const builder = insert(table);
+    const values = builder.values.bind(builder);
+    // values() returns a fresh query object, so $returningId has to be
+    // attached to that result — backing it with SQLite RETURNING.
+    builder.values = (v: unknown) => {
+      const query = values(toEpochMs(v));
+      query.$returningId = () => query.returning({ id: table.id });
+      return query;
+    };
+    return builder;
+  };
+  const update = handle.update.bind(handle);
+  handle.update = (table: any) => {
+    const builder = update(table);
+    const set = builder.set.bind(builder);
+    builder.set = (v: unknown) => set(toEpochMs(v));
+    return builder;
+  };
+  if (typeof handle.transaction === "function") {
+    const transaction = handle.transaction.bind(handle);
+    // async wrapper keeps the callback an AsyncFunction, which the offline
+    // transaction patch detects to drive BEGIN/COMMIT itself
+    handle.transaction = (fn: (tx: unknown) => Promise<unknown>) =>
+      transaction(async (tx: unknown) => fn(patchOfflineWrites(tx)));
+  }
+  return handle;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ---------------------------------------------------------------------------
 // Public API
