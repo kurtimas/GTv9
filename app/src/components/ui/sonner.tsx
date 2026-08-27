@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { Toaster as SonnerToaster, toast, type ToasterProps } from "sonner";
 
 /**
- * Grain Tracker theme is the `day` class on <html> (console-dark by default),
- * toggled by Layout — not next-themes. Watch the class so toasts follow it.
+ * Grain Tracker theme is the `night` class on <html> (harvest-light by
+ * default), toggled by Layout — not next-themes. Watch the class so toasts
+ * follow it.
  */
 function useConsoleTheme(): ToasterProps["theme"] {
   const read = (): ToasterProps["theme"] =>
     typeof document !== "undefined" &&
-    document.documentElement.classList.contains("day")
-      ? "light"
-      : "dark";
+    document.documentElement.classList.contains("night")
+      ? "dark"
+      : "light";
 
   const [theme, setTheme] = useState<ToasterProps["theme"]>(read);
 

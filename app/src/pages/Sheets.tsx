@@ -81,7 +81,7 @@ function numStr(n: number | null | undefined): string {
 function statusBadgeClass(status: SheetRow["status"]): string {
   switch (status) {
     case "OPEN":
-      return "border-primary/50 bg-primary/10 text-primary";
+      return "border-stable/50 bg-stable/10 text-stable";
     case "FULL":
       return "border-go/50 bg-go/10 text-go";
     case "CLOSED":
@@ -105,7 +105,7 @@ function DirectionBadge({ direction }: { direction: SheetRow["direction"] }) {
         "font-mono text-[10px]",
         direction === "INBOUND"
           ? "border-live/50 bg-live/10 text-live"
-          : "border-border bg-secondary text-secondary-foreground",
+          : "border-go/50 bg-go/10 text-go",
       )}
     >
       {direction === "INBOUND" ? "IN" : "OUT"}
@@ -884,18 +884,18 @@ function GradesDialog({
           {gradeField("g-prot", "Protein %", protein, setProtein, "optional")}
         </div>
         {preview && (
-          <div className="rounded-md border border-live/30 bg-readout p-3 font-mono text-xs">
+          <div className="rounded-md border border-live/30 bg-readout p-3 font-mono text-xs text-sidebar-foreground">
             <div className="gt-eyebrow mb-1">Live preview</div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Gross</span>
+              <span className="text-sidebar-foreground/60">Gross</span>
               <span>{fmtBu(preview.grossBushels)} bu</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Shrink</span>
-              <span className="text-primary">{preview.shrinkPct}%</span>
+              <span className="text-sidebar-foreground/60">Shrink</span>
+              <span className="text-live">{preview.shrinkPct}%</span>
             </div>
             <div className="flex justify-between font-semibold">
-              <span className="text-muted-foreground">Net</span>
+              <span className="text-sidebar-foreground/60">Net</span>
               <span className="text-go">{fmtBu(preview.netBushels)} bu</span>
             </div>
           </div>
@@ -982,8 +982,8 @@ function WeightsDialog({
           </div>
         </div>
         {netPreview != null && (
-          <div className="flex justify-between rounded-md border border-border bg-readout px-3 py-2 font-mono text-xs">
-            <span className="text-muted-foreground">New net</span>
+          <div className="flex justify-between rounded-md border border-border bg-readout px-3 py-2 font-mono text-xs text-sidebar-foreground">
+            <span className="text-sidebar-foreground/60">New net</span>
             <span className="font-semibold">{fmtLbs(netPreview)} lbs</span>
           </div>
         )}

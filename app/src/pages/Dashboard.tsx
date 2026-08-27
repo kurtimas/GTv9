@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { MapPin } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn, cropBadgeClass } from "@/lib/utils";
 import { useScale, type UseScale } from "@/hooks/useScale";
 import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
@@ -73,9 +73,9 @@ function ScalePanel({ scale, weightLbs, onManualLbs }: ScalePanelProps) {
 
   const hasReading = weightLbs != null;
   const readoutColor = !hasReading
-    ? "text-muted-foreground"
+    ? "text-sidebar-foreground/40"
     : scale.stable
-      ? "text-go"
+      ? "text-stable"
       : "text-live";
 
   const source = scale.connected
@@ -103,7 +103,7 @@ function ScalePanel({ scale, weightLbs, onManualLbs }: ScalePanelProps) {
               !hasReading
                 ? "text-muted-foreground"
                 : scale.stable
-                  ? "text-go"
+                  ? "text-stable"
                   : "text-live",
             )}
           >
@@ -120,9 +120,9 @@ function ScalePanel({ scale, weightLbs, onManualLbs }: ScalePanelProps) {
             )}
           >
             {hasReading ? fmtLbs(weightLbs) : "———"}
-            <span className="ml-2 text-xl font-medium text-muted-foreground">lb</span>
+            <span className="ml-2 text-xl font-medium text-sidebar-foreground/60">lb</span>
           </div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-sidebar-foreground/60">
             {source}
             {scale.simulator.active ? ` · base ${fmtLbs(simBase)} lb` : ""}
           </div>
@@ -345,7 +345,10 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
           {sheet.lotCode && (
             <span className="font-mono text-xs text-muted-foreground">{sheet.lotCode}</span>
           )}
-          <Badge variant="secondary" className="font-mono text-[10px] uppercase">
+          <Badge
+            variant="outline"
+            className={cn("font-mono text-[10px] uppercase", cropBadgeClass(sheet.crop))}
+          >
             {sheet.crop}
           </Badge>
         </div>
@@ -377,7 +380,7 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
               </div>
             </div>
             <Button
-              className="h-14 w-full bg-go text-lg font-bold text-background hover:bg-go/90"
+              className="h-14 w-full bg-go text-lg font-bold hover:bg-go/90"
               disabled={!canWeigh}
               onClick={() => {
                 if (weightLbs == null) return;

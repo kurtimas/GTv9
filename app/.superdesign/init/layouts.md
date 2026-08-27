@@ -1,3 +1,16 @@
+# Shared Layout
+
+The app has exactly one shared layout: the app shell in `src/components/Layout.tsx`. It wraps every route (mounted once in `src/App.tsx` around `<Routes>`) and renders:
+
+- **Left rail (fixed 240px sidebar)** — `gt-radar` logo mark + gold→crimson gradient brand wordmark "GRAIN TRACKER v2" with "Scale House Ops" eyebrow; NavLink list (Dashboard, Weight Sheets, Bins, Farmers & Lots, Reports) with active state (accent bg + primary indicator bar on the left edge); footer LED + "Server online/offline" status driven by the `useServerOnline()` tRPC ping poll.
+- **Right side** — conditional full-width crimson offline banner (`bg-crit`) when the server is unreachable; header with eyebrow "Grain Tracker v2" + page title (derived from the current pathname), a console/daylight theme toggle button (Sun/Moon), and a live clock chip (`gt-led-live` + `font-mono tabular-nums` inside a `bg-readout` border chip); scrollable `<main>` constrained to `max-w-[1400px]` with `p-6`, rendering `children`.
+- **`<Toaster position="bottom-right" richColors closeButton />`** — sonner toasts themed to follow the `day` class.
+- **Theme**: `useDaylightMode()` toggles the `day` class on `<html>` and persists to `localStorage["gt-theme"]` (`"day"` / `"console"`). Console-dark is the default.
+- **Clock**: `useClock()` re-renders every second, `en-GB` 24h format.
+
+File: `src/components/Layout.tsx`
+
+```tsx
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
 import {
@@ -9,19 +22,10 @@ import {
   Sun,
   Moon,
   WifiOff,
-  MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServerOnline } from "@/providers/trpc";
-import { useSite } from "@/providers/site";
 import { Toaster } from "@/components/ui/sonner";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const THEME_STORAGE_KEY = "gt-theme";
 
@@ -40,22 +44,22 @@ function pageTitleFor(pathname: string): string {
   return match?.label ?? "Not Found";
 }
 
-function useNightMode(): [boolean, () => void] {
-  const [night, setNight] = useState<boolean>(() => {
+function useDaylightMode(): [boolean, () => void] {
+  const [day, setDay] = useState<boolean>(() => {
     if (typeof localStorage === "undefined") return false;
-    return localStorage.getItem(THEME_STORAGE_KEY) === "night";
+    return localStorage.getItem(THEME_STORAGE_KEY) === "day";
   });
 
   useEffect(() => {
-    document.documentElement.classList.toggle("night", night);
+    document.documentElement.classList.toggle("day", day);
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, night ? "night" : "harvest");
+      localStorage.setItem(THEME_STORAGE_KEY, day ? "day" : "console");
     } catch {
       /* storage unavailable (private mode) — class toggle still works */
     }
-  }, [night]);
+  }, [day]);
 
-  return [night, () => setNight((v) => !v)];
+  return [day, () => setDay((v) => !v)];
 }
 
 function useClock(): string {
@@ -70,8 +74,7 @@ function useClock(): string {
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const online = useServerOnline();
-  const [night, toggleNight] = useNightMode();
-  const { sites, siteId, setSiteId } = useSite();
+  const [day, toggleDay] = useDaylightMode();
   const clock = useClock();
   const pageTitle = pageTitleFor(location.pathname);
 
@@ -151,37 +154,17 @@ export default function Layout({ children }: { children: ReactNode }) {
             </h1>
           </div>
           <div className="flex flex-none items-center gap-3">
-            <Select
-              value={siteId != null ? String(siteId) : undefined}
-              onValueChange={(v) => setSiteId(Number(v))}
-            >
-              <SelectTrigger
-                className="h-9 w-[220px] gap-2 font-medium"
-                title="Active location — the whole app is scoped to it"
-              >
-                <MapPin className="h-4 w-4 flex-none text-muted-foreground" />
-                <SelectValue placeholder="No locations yet" />
-              </SelectTrigger>
-              <SelectContent align="end">
-                {sites.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                    {s.location ? ` — ${s.location}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <button
               type="button"
-              onClick={toggleNight}
-              title={night ? "Switch to harvest (light) mode" : "Switch to night mode"}
+              onClick={toggleDay}
+              title={day ? "Switch to console (dark) mode" : "Switch to daylight mode"}
               className="flex h-9 w-9 items-center justify-center rounded-md border border-input text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              {night ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {day ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             <div className="flex items-center gap-2 rounded-md border border-border bg-readout px-3 py-1.5">
               <span className="gt-led gt-led-live" />
-              <span className="font-mono text-sm tabular-nums text-sidebar-foreground">
+              <span className="font-mono text-sm tabular-nums text-foreground">
                 {clock}
               </span>
             </div>
@@ -197,3 +180,12 @@ export default function Layout({ children }: { children: ReactNode }) {
     </div>
   );
 }
+```
+
+## Layout's own dependencies
+
+- `src/lib/utils.ts` — `cn()`
+- `src/providers/trpc.tsx` — `useServerOnline()` (tRPC `ping` query, 10s interval; also exports the `TRPCProvider` mounted in `src/main.tsx`)
+- `src/components/ui/sonner.tsx` — themed Toaster
+
+There are no other layout components (no footer, breadcrumbs, or secondary wrappers). Page-level "headers" (e.g. the `gt-eyebrow` + `<h1>` in Sheets/Reports) are rendered by each page inside the shell's `<main>`.

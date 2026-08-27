@@ -62,8 +62,8 @@ function DirectionBadge({ direction }: { direction: "INBOUND" | "OUTBOUND" }) {
       variant="outline"
       className={
         direction === "INBOUND"
-          ? "border-go/50 font-mono text-[10px] text-go"
-          : "border-primary/50 font-mono text-[10px] text-primary"
+          ? "border-stable/50 font-mono text-[10px] text-stable"
+          : "border-go/50 font-mono text-[10px] text-go"
       }
     >
       {direction === "INBOUND" ? "IN" : "OUT"}
@@ -77,7 +77,7 @@ function LoadStatusBadge({ status }: { status: "OPEN" | "COMPLETED" }) {
       ON SCALE
     </Badge>
   ) : (
-    <Badge variant="outline" className="border-go/50 font-mono text-[10px] text-go">
+    <Badge variant="outline" className="border-stable/50 font-mono text-[10px] text-stable">
       COMPLETED
     </Badge>
   );
@@ -628,7 +628,7 @@ export default function Reports() {
                           variant="outline"
                           className={
                             row.direction === "PUSH"
-                              ? "border-primary/50 font-mono text-[10px] text-primary"
+                              ? "border-go/50 font-mono text-[10px] text-go"
                               : "border-live/50 font-mono text-[10px] text-live"
                           }
                         >
@@ -640,7 +640,7 @@ export default function Reports() {
                           variant="outline"
                           className={
                             row.status === "OK"
-                              ? "border-go/50 font-mono text-[10px] text-go"
+                              ? "border-stable/50 font-mono text-[10px] text-stable"
                               : "border-crit/60 font-mono text-[10px] text-crit"
                           }
                         >

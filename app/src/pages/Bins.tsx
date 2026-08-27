@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Gauge, Pencil, Plus, Trash2, Warehouse } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn, cropBadgeClass } from "@/lib/utils";
 import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
 import { Badge } from "@/components/ui/badge";
@@ -45,17 +45,17 @@ function fmtBuLive(n: number): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
-/** Fill bar color thresholds: green <70%, amber 70-90%, red >90%. */
+/** Fill bar color thresholds: green <70%, gold 70-90%, red >90%. */
 function fillBarClass(pct: number): string {
   if (pct > 90) return "bg-crit";
-  if (pct >= 70) return "bg-primary";
-  return "bg-go";
+  if (pct >= 70) return "bg-go";
+  return "bg-stable";
 }
 
 function fillTextClass(pct: number): string {
   if (pct > 90) return "text-crit";
-  if (pct >= 70) return "text-primary";
-  return "text-go";
+  if (pct >= 70) return "text-go";
+  return "text-stable";
 }
 
 /**
@@ -611,7 +611,12 @@ function BinCard({
         <div className="min-w-0">
           <CardTitle className="truncate text-base">{bin.name}</CardTitle>
           <div className="mt-1.5">
-            <Badge variant="secondary">{bin.crop}</Badge>
+            <Badge
+              variant="outline"
+              className={cn("font-mono text-[10px] uppercase", cropBadgeClass(bin.crop))}
+            >
+              {bin.crop}
+            </Badge>
           </div>
         </div>
         <div className="flex flex-none items-center gap-1">

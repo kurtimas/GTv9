@@ -50,6 +50,7 @@ module.exports = {
         },
         live: "hsl(var(--live))",
         go: "hsl(var(--go))",
+        stable: "hsl(var(--stable))",
         crit: "hsl(var(--crit))",
         readout: "hsl(var(--readout))",
       },
