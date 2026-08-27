@@ -293,7 +293,10 @@ function LotDialog({ onClose }: { onClose: () => void }) {
 
   const farmerIdNum = Number(farmerId);
   const nextCode = trpc.people.lots.nextCode.useQuery(
-    { farmerId: farmerIdNum },
+    {
+      farmerId: farmerIdNum,
+      landlordId: landlordId !== NO_LANDLORD ? Number(landlordId) : undefined,
+    },
     { enabled: farmerId !== "" && Number.isFinite(farmerIdNum) },
   );
 

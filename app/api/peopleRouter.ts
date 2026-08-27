@@ -73,15 +73,24 @@ export const peopleRouter = createRouter({
     }),
     // suggested next lot code for a farmer: 706C-<INITIALS>-<YY><NN>
     nextCode: publicQuery
-      .input(z.object({ farmerId: z.number() }))
+      .input(
+        z.object({
+          farmerId: z.number(),
+          landlordId: z.number().nullable().optional(),
+        }),
+      )
       .query(async ({ input }) => {
         const db = getDb();
         const farmer = await db.query.farmers.findFirst({
           where: eq(farmers.id, input.farmerId),
         });
         if (!farmer) throw new Error("Farmer not found");
+        const landlord =
+          input.landlordId != null
+            ? await db.query.landlords.findFirst({ where: eq(landlords.id, input.landlordId) })
+            : null;
         const rows = await db.select({ code: lots.code }).from(lots);
-        return { code: nextLotCode(rows.map((r) => r.code), farmer.name) };
+        return { code: nextLotCode(rows.map((r) => r.code), farmer.name, landlord?.name) };
       }),
     create: publicQuery
       .input(
