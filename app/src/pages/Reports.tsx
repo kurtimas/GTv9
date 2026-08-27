@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useSite } from "@/providers/site";
 import { fmtBu, fmtLbs } from "@contracts/grain";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -113,11 +114,18 @@ function SummaryCard(props: {
 
 export default function Reports() {
   const utils = trpc.useUtils();
+  const { siteId, siteName } = useSite();
   const [date, setDate] = useState(todayInput);
   const [closeOpen, setCloseOpen] = useState(false);
 
-  const report = trpc.sheets.dailyReport.useQuery({ date });
-  const openSheets = trpc.sheets.open.useQuery();
+  const report = trpc.sheets.dailyReport.useQuery(
+    { date, siteId: siteId ?? undefined },
+    { enabled: siteId != null },
+  );
+  const openSheets = trpc.sheets.open.useQuery(
+    { siteId: siteId ?? undefined },
+    { enabled: siteId != null },
+  );
 
   const closeDay = trpc.sheets.closeDay.useMutation({
     onSuccess: async (r) => {
@@ -469,17 +477,20 @@ export default function Reports() {
       {/* close day */}
       <Card className="border-destructive/40">
         <CardHeader>
-          <CardTitle className="text-sm text-destructive">Close day</CardTitle>
+          <CardTitle className="text-sm text-destructive">
+            Close day{siteName ? ` — ${siteName}` : ""}
+          </CardTitle>
           <CardDescription>
-            Closes all open sheets and locks the day. If an office portal is
-            configured, the end-of-day report is pushed automatically. This
-            cannot be undone.
+            Closes open sheets at this location and locks the day. If an office
+            portal is configured, the end-of-day report is pushed
+            automatically. This cannot be undone.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-4">
           <div className="text-sm text-muted-foreground">
             <span className="font-mono text-foreground">{openCount}</span> sheet
-            {openCount === 1 ? "" : "s"} currently open.
+            {openCount === 1 ? "" : "s"} currently open at
+            {" "}{siteName ?? "this location"}.
           </div>
           <Button
             variant="destructive"
@@ -494,7 +505,7 @@ export default function Reports() {
       <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Close the day?</DialogTitle>
+            <DialogTitle>Close the day at {siteName ?? "this location"}?</DialogTitle>
             <DialogDescription>
               This closes{" "}
               <span className="font-mono font-semibold text-foreground">
@@ -515,7 +526,7 @@ export default function Reports() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => closeDay.mutate()}
+              onClick={() => closeDay.mutate({ siteId: siteId ?? undefined })}
               disabled={closeDay.isPending}
             >
               {closeDay.isPending ? "Closing…" : "Close day"}

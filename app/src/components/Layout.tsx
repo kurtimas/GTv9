@@ -9,10 +9,19 @@ import {
   Sun,
   Moon,
   WifiOff,
+  MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServerOnline } from "@/providers/trpc";
+import { useSite } from "@/providers/site";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const THEME_STORAGE_KEY = "gt-theme";
 
@@ -62,6 +71,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const online = useServerOnline();
   const [day, toggleDay] = useDaylightMode();
+  const { sites, siteId, setSiteId } = useSite();
   const clock = useClock();
   const pageTitle = pageTitleFor(location.pathname);
 
@@ -141,6 +151,26 @@ export default function Layout({ children }: { children: ReactNode }) {
             </h1>
           </div>
           <div className="flex flex-none items-center gap-3">
+            <Select
+              value={siteId != null ? String(siteId) : undefined}
+              onValueChange={(v) => setSiteId(Number(v))}
+            >
+              <SelectTrigger
+                className="h-9 w-[220px] gap-2 font-medium"
+                title="Active location — the whole app is scoped to it"
+              >
+                <MapPin className="h-4 w-4 flex-none text-muted-foreground" />
+                <SelectValue placeholder="No locations yet" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {sites.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                    {s.location ? ` — ${s.location}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <button
               type="button"
               onClick={toggleDay}

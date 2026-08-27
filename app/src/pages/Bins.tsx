@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Gauge, Pencil, Plus, Trash2, Warehouse } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -240,10 +241,13 @@ function AddBinDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const utils = trpc.useUtils();
+  const { siteId: activeSiteId } = useSite();
   const sitesQuery = trpc.core.sites.list.useQuery();
   const sites = sitesQuery.data ?? [];
 
-  const [siteId, setSiteId] = useState<string>("");
+  const [siteId, setSiteId] = useState<string>(
+    () => (activeSiteId != null ? String(activeSiteId) : ""),
+  );
   const [name, setName] = useState("");
   const [crop, setCrop] = useState<Crop>("Corn");
   const capacity = useCapacityConverter(crop);
@@ -669,8 +673,12 @@ function BinCard({
 // ---------------------------------------------------------------------------
 
 export default function Bins() {
+  const { siteId } = useSite();
   const sitesQuery = trpc.core.sites.list.useQuery();
-  const binsQuery = trpc.core.bins.list.useQuery();
+  const binsQuery = trpc.core.bins.list.useQuery(
+    { siteId: siteId ?? undefined },
+    { enabled: siteId != null },
+  );
 
   const [siteDialogOpen, setSiteDialogOpen] = useState(false);
   const [binDialogOpen, setBinDialogOpen] = useState(false);
@@ -680,7 +688,7 @@ export default function Bins() {
 
   const sites = useMemo(() => sitesQuery.data ?? [], [sitesQuery.data]);
   const bins = useMemo(() => binsQuery.data ?? [], [binsQuery.data]);
-  const loading = sitesQuery.isPending || binsQuery.isPending;
+  const loading = sitesQuery.isPending || (siteId != null && binsQuery.isPending);
 
   const stats = useMemo(() => {
     const capacity = bins.reduce((sum, b) => sum + b.capacityLbs, 0);
@@ -689,21 +697,16 @@ export default function Bins() {
     return { capacity, current, fillPct, count: bins.length };
   }, [bins]);
 
+  // Everything on this page belongs to the active location; only bins whose
+  // site no longer exists fall into the catch-all bucket.
   const groups = useMemo(() => {
-    const bySite = new Map<number, { name: string; location: string | null; bins: BinRow[] }>();
-    for (const site of sites) {
-      bySite.set(site.id, { name: site.name, location: site.location, bins: [] });
-    }
-    const unassigned: BinRow[] = [];
-    for (const bin of bins) {
-      const group = bySite.get(bin.siteId);
-      if (group) group.bins.push(bin);
-      else unassigned.push(bin);
-    }
-    return { bySite: [...bySite.values()], unassigned };
-  }, [sites, bins]);
+    const active = sites.find((s) => s.id === siteId) ?? null;
+    const siteBins = active ? bins.filter((b) => b.siteId === active.id) : [];
+    const unassigned = active ? bins.filter((b) => b.siteId !== active.id) : [...bins];
+    return { active, siteBins, unassigned };
+  }, [sites, bins, siteId]);
 
-  const isEmpty = !loading && sites.length === 0 && bins.length === 0;
+  const isEmpty = !loading && sites.length === 0;
 
   return (
     <div className="space-y-6">
@@ -802,28 +805,28 @@ export default function Bins() {
         </Card>
       ) : (
         <div className="space-y-8">
-          {groups.bySite.map((group) => (
-            <section key={group.name} className="space-y-3">
+          {groups.active ? (
+            <section className="space-y-3">
               <div className="flex items-baseline gap-3">
                 <h2 className="text-sm font-semibold uppercase tracking-widest">
-                  {group.name}
+                  {groups.active.name}
                 </h2>
-                {group.location && (
+                {groups.active.location && (
                   <span className="text-xs text-muted-foreground">
-                    {group.location}
+                    {groups.active.location}
                   </span>
                 )}
                 <span className="font-mono text-xs text-muted-foreground">
-                  {group.bins.length} bin{group.bins.length === 1 ? "" : "s"}
+                  {groups.siteBins.length} bin{groups.siteBins.length === 1 ? "" : "s"}
                 </span>
               </div>
-              {group.bins.length === 0 ? (
+              {groups.siteBins.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No bins at this site yet.
+                  No bins at this location yet — add the first one.
                 </p>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.bins.map((bin) => (
+                  {groups.siteBins.map((bin) => (
                     <BinCard
                       key={bin.id}
                       bin={bin}
@@ -835,7 +838,11 @@ export default function Bins() {
                 </div>
               )}
             </section>
-          ))}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No active location — switch locations in the header.
+            </p>
+          )}
           {groups.unassigned.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold uppercase tracking-widest">

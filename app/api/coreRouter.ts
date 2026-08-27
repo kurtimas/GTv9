@@ -19,15 +19,18 @@ export const coreRouter = createRouter({
 
   // -------------------------------------------------------------- bins
   bins: createRouter({
-    list: publicQuery.query(async () => {
-      const db = getDb();
-      const rows = await db
-        .select({ bin: bins, siteName: sites.name })
-        .from(bins)
-        .leftJoin(sites, eq(bins.siteId, sites.id))
-        .orderBy(sites.name, bins.name);
-      return rows.map((r) => ({ ...r.bin, siteName: r.siteName }));
-    }),
+    list: publicQuery
+      .input(z.object({ siteId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = getDb();
+        const rows = await db
+          .select({ bin: bins, siteName: sites.name })
+          .from(bins)
+          .leftJoin(sites, eq(bins.siteId, sites.id))
+          .where(input?.siteId ? eq(bins.siteId, input.siteId) : undefined)
+          .orderBy(sites.name, bins.name);
+        return rows.map((r) => ({ ...r.bin, siteName: r.siteName }));
+      }),
     create: publicQuery
       .input(
         z.object({

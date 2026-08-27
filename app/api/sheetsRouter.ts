@@ -144,6 +144,7 @@ export const sheetsRouter = createRouter({
       z
         .object({
           search: z.string().optional(),
+          siteId: z.number().optional(),
           farmerId: z.number().optional(),
           lotId: z.number().optional(),
           landlordId: z.number().optional(),
@@ -177,6 +178,7 @@ export const sheetsRouter = createRouter({
           ),
         );
       }
+      if (input?.siteId) conds.push(eq(weightSheets.siteId, input.siteId));
       if (input?.farmerId) conds.push(eq(weightSheets.farmerId, input.farmerId));
       if (input?.lotId) conds.push(eq(weightSheets.lotId, input.lotId));
       if (input?.landlordId) conds.push(eq(weightSheets.landlordId, input.landlordId));
@@ -195,15 +197,21 @@ export const sheetsRouter = createRouter({
     }),
 
   // --------------------------------------- dashboard: open sheet queue
-  open: publicQuery.query(async () => {
-    const db = getDb();
-    const rows = await joinSheetTables(db)
-      .where(eq(weightSheets.status, "OPEN"))
-      .orderBy(asc(weightSheets.createdAt));
-    const typed = rows as JoinedSheetRow[];
-    const loadMap = await fetchLoads(db, typed.map((r) => r.sheet.id));
-    return typed.map((r) => toSheetRow(r, loadMap.get(r.sheet.id) ?? [], true));
-  }),
+  open: publicQuery
+    .input(z.object({ siteId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = getDb();
+      const rows = await joinSheetTables(db)
+        .where(
+          input?.siteId
+            ? and(eq(weightSheets.status, "OPEN"), eq(weightSheets.siteId, input.siteId))
+            : eq(weightSheets.status, "OPEN"),
+        )
+        .orderBy(asc(weightSheets.createdAt));
+      const typed = rows as JoinedSheetRow[];
+      const loadMap = await fetchLoads(db, typed.map((r) => r.sheet.id));
+      return typed.map((r) => toSheetRow(r, loadMap.get(r.sheet.id) ?? [], true));
+    }),
 
   get: publicQuery.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = getDb();
@@ -569,38 +577,47 @@ export const sheetsRouter = createRouter({
   }),
 
   // ------------------------------- truck tare memory (from history)
-  truckTares: publicQuery.query(async () => {
-    const db = getDb();
-    const rows = await db
-      .select({ truckId: loads.truckId, tareLbs: loads.tareLbs })
-      .from(loads);
-    // group in JS (avg + count + spread per truck)
-    const byTruck = new Map<string, number[]>();
-    for (const r of rows) {
-      if (!r.truckId || r.tareLbs == null) continue;
-      byTruck.set(r.truckId, [...(byTruck.get(r.truckId) ?? []), r.tareLbs]);
-    }
-    return [...byTruck.entries()].map(([truckId, tares]) => {
-      const avg = Math.round(tares.reduce((a, b) => a + b, 0) / tares.length);
-      return {
-        truckId,
-        avgTare: avg,
-        loads: tares.length,
-        minTare: Math.min(...tares),
-        maxTare: Math.max(...tares),
-      };
-    });
-  }),
+  truckTares: publicQuery
+    .input(z.object({ siteId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = getDb();
+      const rows = await db
+        .select({ truckId: loads.truckId, tareLbs: loads.tareLbs })
+        .from(loads)
+        .innerJoin(weightSheets, eq(loads.sheetId, weightSheets.id))
+        .where(input?.siteId ? eq(weightSheets.siteId, input.siteId) : undefined);
+      // group in JS (avg + count + spread per truck)
+      const byTruck = new Map<string, number[]>();
+      for (const r of rows) {
+        if (!r.truckId || r.tareLbs == null) continue;
+        byTruck.set(r.truckId, [...(byTruck.get(r.truckId) ?? []), r.tareLbs]);
+      }
+      return [...byTruck.entries()].map(([truckId, tares]) => {
+        const avg = Math.round(tares.reduce((a, b) => a + b, 0) / tares.length);
+        return {
+          truckId,
+          avgTare: avg,
+          loads: tares.length,
+          minTare: Math.min(...tares),
+          maxTare: Math.max(...tares),
+        };
+      });
+    }),
 
   // -------------------------------------- global activity feed (audit)
   recentActivity: publicQuery
-    .input(z.object({ limit: z.number().int().min(1).max(100).default(25) }).optional())
+    .input(
+      z
+        .object({ limit: z.number().int().min(1).max(100).default(25), siteId: z.number().optional() })
+        .optional(),
+    )
     .query(async ({ input }) => {
       const db = getDb();
       const rows = await db
         .select({ event: sheetEvents, ticketNo: weightSheets.ticketNo })
         .from(sheetEvents)
         .leftJoin(weightSheets, eq(sheetEvents.sheetId, weightSheets.id))
+        .where(input?.siteId ? eq(weightSheets.siteId, input.siteId) : undefined)
         .orderBy(desc(sheetEvents.createdAt))
         .limit(input?.limit ?? 25);
       return rows.map((r) => ({ ...r.event, ticketNo: r.ticketNo }));
@@ -609,12 +626,14 @@ export const sheetsRouter = createRouter({
   // ------------------------------------------------------- end of day
   // Any sheet still open at close of day is closed (FULL sheets are already
   // closed). Lots stay open — a fresh sheet can be started tomorrow.
-  closeDay: publicQuery.mutation(async () => {
-    const db = getDb();
-    const open = await db
-      .select({ id: weightSheets.id })
-      .from(weightSheets)
-      .where(eq(weightSheets.status, "OPEN"));
+  closeDay: publicQuery
+    .input(z.object({ siteId: z.number().optional() }).optional())
+    .mutation(async ({ input }) => {
+      const db = getDb();
+      const openWhere = input?.siteId
+        ? and(eq(weightSheets.status, "OPEN"), eq(weightSheets.siteId, input.siteId))
+        : eq(weightSheets.status, "OPEN");
+      const open = await db.select({ id: weightSheets.id }).from(weightSheets).where(openWhere);
     if (open.length === 0) return { closed: 0, office: null };
     const ids = open.map((r) => r.id);
     await db
@@ -631,7 +650,7 @@ export const sheetsRouter = createRouter({
 
   // ------------------------------------------------------ daily report
   dailyReport: publicQuery
-    .input(z.object({ date: z.string().optional() }).optional())
+    .input(z.object({ date: z.string().optional(), siteId: z.number().optional() }).optional())
     .query(async ({ input }) => {
       const db = getDb();
       const day = input?.date ? new Date(input.date) : new Date();
@@ -654,14 +673,26 @@ export const sheetsRouter = createRouter({
         .leftJoin(farmers, eq(weightSheets.farmerId, farmers.id))
         .leftJoin(lots, eq(weightSheets.lotId, lots.id))
         .leftJoin(landlords, eq(weightSheets.landlordId, landlords.id))
-        .where(and(gte(loads.createdAt, from), lte(loads.createdAt, to)))
+        .where(
+          and(
+            gte(loads.createdAt, from),
+            lte(loads.createdAt, to),
+            ...(input?.siteId ? [eq(weightSheets.siteId, input.siteId)] : []),
+          ),
+        )
         .orderBy(asc(loads.createdAt));
 
       // sheets opened that day (for the "opened today" count)
       const sheetsOpened = await db
         .select({ id: weightSheets.id })
         .from(weightSheets)
-        .where(and(gte(weightSheets.createdAt, from), lte(weightSheets.createdAt, to)));
+        .where(
+          and(
+            gte(weightSheets.createdAt, from),
+            lte(weightSheets.createdAt, to),
+            ...(input?.siteId ? [eq(weightSheets.siteId, input.siteId)] : []),
+          ),
+        );
 
       const ledger = loadRows.map((r) => ({
         id: r.load.id,
@@ -711,6 +742,7 @@ export const sheetsRouter = createRouter({
         .select({ bin: bins, siteName: sites.name })
         .from(bins)
         .leftJoin(sites, eq(bins.siteId, sites.id))
+        .where(input?.siteId ? eq(bins.siteId, input.siteId) : undefined)
         .orderBy(sites.name, bins.name);
 
       return {

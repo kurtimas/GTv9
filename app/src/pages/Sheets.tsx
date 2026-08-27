@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +127,7 @@ function useInvalidateSheets() {
 // ---------------------------------------------------------------- page
 
 export default function SheetsPage() {
+  const { siteId } = useSite();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [farmerId, setFarmerId] = useState("all");
@@ -145,6 +147,7 @@ export default function SheetsPage() {
 
   const filters = useMemo(
     () => ({
+      ...(siteId != null ? { siteId } : {}),
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
       ...(farmerId !== "all" ? { farmerId: Number(farmerId) } : {}),
       ...(crop !== "all" ? { crop } : {}),
@@ -152,10 +155,10 @@ export default function SheetsPage() {
       ...(dateFrom ? { dateFrom } : {}),
       ...(dateTo ? { dateTo } : {}),
     }),
-    [debouncedSearch, farmerId, crop, status, dateFrom, dateTo],
+    [siteId, debouncedSearch, farmerId, crop, status, dateFrom, dateTo],
   );
 
-  const sheetsQ = trpc.sheets.list.useQuery(filters);
+  const sheetsQ = trpc.sheets.list.useQuery(filters, { enabled: siteId != null });
   const farmersQ = trpc.people.farmers.list.useQuery();
 
   const hasFilters =

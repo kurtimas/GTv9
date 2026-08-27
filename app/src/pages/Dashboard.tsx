@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { MapPin } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { useScale, type UseScale } from "@/hooks/useScale";
+import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -376,14 +378,14 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
 
 function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
-  const [siteId, setSiteId] = useState("");
+  const { siteId, sites } = useSite();
+  const site = sites.find((s) => s.id === siteId);
   const [direction, setDirection] = useState<"INBOUND" | "OUTBOUND">("INBOUND");
   const [lotId, setLotId] = useState("");
   const [farmerId, setFarmerId] = useState("");
   const [crop, setCrop] = useState("");
   const [notes, setNotes] = useState("");
 
-  const sites = trpc.core.sites.list.useQuery(undefined, { enabled: open });
   const lots = trpc.people.lots.list.useQuery(undefined, { enabled: open });
   const farmers = trpc.people.farmers.list.useQuery(undefined, {
     enabled: open && direction === "OUTBOUND",
@@ -404,14 +406,14 @@ function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
   });
 
   const canSubmit =
-    siteId !== "" &&
+    siteId != null &&
     (direction === "INBOUND" ? lotId !== "" : farmerId !== "" && crop !== "") &&
     !create.isPending;
 
   const submit = () => {
-    if (!canSubmit) return;
+    if (!canSubmit || siteId == null) return;
     create.mutate({
-      siteId: Number(siteId),
+      siteId,
       direction,
       lotId: direction === "INBOUND" ? Number(lotId) : undefined,
       farmerId: direction === "OUTBOUND" ? Number(farmerId) : undefined,
@@ -436,20 +438,21 @@ function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <Label>Site</Label>
-            <Select value={siteId} onValueChange={setSiteId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select site…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(sites.data ?? []).map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                    {s.location ? ` — ${s.location}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Location</Label>
+            <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 font-mono text-sm text-muted-foreground">
+              <MapPin className="h-4 w-4 flex-none" />
+              {site ? (
+                <>
+                  {site.name}
+                  {site.location ? ` — ${site.location}` : ""}
+                </>
+              ) : (
+                "No location — add one under Bins first"
+              )}
+            </div>
+            <p className="font-mono text-[11px] text-muted-foreground">
+              Sheets open at the active location (switch it in the header).
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -547,7 +550,11 @@ function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
 /* ------------------------------------------------------------------ */
 
 function ActivityFeed() {
-  const activity = trpc.sheets.recentActivity.useQuery({}, { refetchInterval: 10_000 });
+  const { siteId } = useSite();
+  const activity = trpc.sheets.recentActivity.useQuery(
+    { siteId: siteId ?? undefined },
+    { enabled: siteId != null, refetchInterval: 10_000 },
+  );
 
   return (
     <Card className="gt-panel h-fit">
@@ -592,10 +599,14 @@ function ActivityFeed() {
 
 export default function Dashboard() {
   const utils = trpc.useUtils();
+  const { siteId } = useSite();
   const scale = useScale();
   const [manualLbs, setManualLbs] = useState<number | null>(null);
 
-  const openSheets = trpc.sheets.open.useQuery(undefined, { refetchInterval: 5_000 });
+  const openSheets = trpc.sheets.open.useQuery(
+    { siteId: siteId ?? undefined },
+    { enabled: siteId != null, refetchInterval: 5_000 },
+  );
 
   const invalidateSheets = () => {
     void utils.sheets.open.invalidate();
