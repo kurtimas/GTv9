@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Copy, Pencil, Plus, Settings2 } from "lucide-react";
+import { Check, Copy, Lock, Pencil, Plus, Settings2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { useSite } from "@/providers/site";
@@ -17,9 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 /**
- * Site administration — create sites, edit their details, switch this
- * terminal to a site, and copy a per-site link (…/?site=<id>) that each
- * location can bookmark so it always opens on its own site.
+ * Site administration — password-protected. Create sites, edit their
+ * details, switch this terminal to a site, and copy a per-site link
+ * (…/?site=<id>) that each location can bookmark so it always opens on
+ * its own site. The password is verified server-side (ADMIN_PASSWORD)
+ * and re-asked every time the dialog is opened.
  */
 export function AdminSites() {
   const [open, setOpen] = useState(false);
@@ -27,11 +29,34 @@ export function AdminSites() {
 
   const utils = trpc.useUtils();
 
+  const [unlocked, setUnlocked] = useState(false);
+  const [password, setPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newLocation, setNewLocation] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editLocation, setEditLocation] = useState("");
+
+  const closeDialog = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      // Lock again on close — the password is asked each session.
+      setUnlocked(false);
+      setPassword("");
+      setEditingId(null);
+    }
+  };
+
+  const verify = trpc.core.admin.verify.useMutation({
+    onSuccess: (res) => {
+      if (res.ok) {
+        setUnlocked(true);
+      } else {
+        toast.error("Wrong password");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const invalidate = () => {
     void utils.core.sites.list.invalidate();
@@ -73,7 +98,11 @@ export function AdminSites() {
       toast.error("Site name is required.");
       return;
     }
-    create.mutate({ name, location: newLocation.trim() || undefined });
+    create.mutate({
+      adminPassword: password,
+      name,
+      location: newLocation.trim() || undefined,
+    });
   };
 
   const submitEdit = (id: number) => {
@@ -82,7 +111,12 @@ export function AdminSites() {
       toast.error("Site name is required.");
       return;
     }
-    update.mutate({ id, name, location: editLocation.trim() || undefined });
+    update.mutate({
+      adminPassword: password,
+      id,
+      name,
+      location: editLocation.trim() || undefined,
+    });
   };
 
   return (
@@ -97,16 +131,49 @@ export function AdminSites() {
         <span>Site admin</span>
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={closeDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Sites</DialogTitle>
             <DialogDescription>
-              Create sites, edit details, switch this machine's site, or copy a
-              per-site link each location can bookmark.
+              {unlocked
+                ? "Create sites, edit details, switch this machine's site, or copy a per-site link each location can bookmark."
+                : "Enter the admin password to manage sites."}
             </DialogDescription>
           </DialogHeader>
 
+          {!unlocked ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-md border border-dashed p-4">
+                <Lock className="h-5 w-5 flex-none text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Site administration is password-protected.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="admin-password">Admin password</Label>
+                <Input
+                  id="admin-password"
+                  type="password"
+                  autoFocus
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && password) verify.mutate({ password });
+                  }}
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={!password || verify.isPending}
+                onClick={() => verify.mutate({ password })}
+              >
+                <Lock className="h-4 w-4" />
+                {verify.isPending ? "Checking…" : "Unlock"}
+              </Button>
+            </div>
+          ) : (
+            <>
           <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
             {sites.length === 0 && (
               <p className="py-4 text-center text-sm text-muted-foreground">
@@ -256,6 +323,8 @@ export function AdminSites() {
               {create.isPending ? "Creating…" : "Add site"}
             </Button>
           </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </>

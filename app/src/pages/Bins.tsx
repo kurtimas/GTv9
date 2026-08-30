@@ -157,82 +157,6 @@ function CapacityFields({
 // Dialogs
 // ---------------------------------------------------------------------------
 
-function AddSiteDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const utils = trpc.useUtils();
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
-
-  const createSite = trpc.core.sites.create.useMutation({
-    onSuccess: async () => {
-      toast.success(`Site "${name.trim()}" added`);
-      setName("");
-      setLocation("");
-      onOpenChange(false);
-      await utils.core.sites.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const submit = () => {
-    if (!name.trim()) {
-      toast.error("Site name is required");
-      return;
-    }
-    createSite.mutate({
-      name: name.trim(),
-      location: location.trim() || undefined,
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add site</DialogTitle>
-          <DialogDescription>
-            A site is one elevator location / yard that holds bins.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="site-name">Name</Label>
-            <Input
-              id="site-name"
-              placeholder="Main Yard"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="site-location">Location (optional)</Label>
-            <Input
-              id="site-location"
-              placeholder="Hwy 14, east of town"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={createSite.isPending}>
-            {createSite.isPending ? "Adding…" : "Add site"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function AddBinDialog({
   open,
   onOpenChange,
@@ -685,7 +609,6 @@ export default function Bins() {
     { enabled: siteId != null },
   );
 
-  const [siteDialogOpen, setSiteDialogOpen] = useState(false);
   const [binDialogOpen, setBinDialogOpen] = useState(false);
   const [editBin, setEditBin] = useState<BinRow | null>(null);
   const [adjustBin, setAdjustBin] = useState<BinRow | null>(null);
@@ -775,10 +698,6 @@ export default function Bins() {
           </Card>
         </div>
         <div className="flex flex-none gap-2">
-          <Button variant="outline" onClick={() => setSiteDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add site
-          </Button>
           <Button onClick={() => setBinDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add bin
@@ -798,14 +717,8 @@ export default function Bins() {
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
             <Warehouse className="h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Add your first site and bin to start tracking inventory.
+              Add your first site in Site admin (sidebar), then add bins here.
             </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setSiteDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add site
-              </Button>
-            </div>
           </CardContent>
         </Card>
       ) : (
@@ -870,7 +783,6 @@ export default function Bins() {
       )}
 
       {/* ---- Dialogs ----------------------------------------------------- */}
-      <AddSiteDialog open={siteDialogOpen} onOpenChange={setSiteDialogOpen} />
       {/* key remounts the dialog so stale form state never leaks between opens */}
       {binDialogOpen && (
         <AddBinDialog key="add-bin" open onOpenChange={setBinDialogOpen} />

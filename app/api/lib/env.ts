@@ -20,6 +20,9 @@ export const env = {
   /** Set SEED_DEMO=false to skip the demo dataset on first boot. */
   SEED_DEMO: process.env.SEED_DEMO !== "false",
 
+  /** Password guarding site administration (create/edit sites). */
+  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "grain-admin",
+
   /** HTTP port for the production server. */
   PORT: parseInt(process.env.PORT || "3000", 10),
 } as const;
