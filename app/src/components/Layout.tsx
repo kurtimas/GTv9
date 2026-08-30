@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useServerOnline } from "@/providers/trpc";
+import { AdminSites } from "@/components/AdminSites";
 import { useSite } from "@/providers/site";
 import { Toaster } from "@/components/ui/sonner";
 import {
@@ -122,8 +123,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border px-5 py-3">
-          <div className="flex items-center gap-2">
+        <div className="space-y-1.5 border-t border-sidebar-border px-3 py-3">
+          <AdminSites />
+          <div className="flex items-center gap-2 px-2">
             <span className={cn("gt-led", online ? "gt-led-on" : "gt-led-crit")} />
             <span className="font-mono text-[10px] uppercase tracking-widest text-sidebar-foreground/60">
               {online ? "Server online" : "Server offline"}

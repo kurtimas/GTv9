@@ -27,9 +27,28 @@ interface SiteContextValue {
 const SiteContext = createContext<SiteContextValue | null>(null);
 
 /**
+ * Initial selection, resolved once at mount:
+ *   1. `?site=<id>` URL param — per-site bookmark/shortcut (Admin → Sites
+ *      copies these). Lets several sites share one browser or terminal and
+ *      still always land on their own site.
+ *   2. localStorage — this machine's own remembered site.
+ * A stale/absent choice falls back to the first site, but a valid
+ * remembered site is never switched away from implicitly.
+ */
+function readInitialSiteId(): number | null {
+  if (typeof window !== "undefined") {
+    const n = Number(new URLSearchParams(window.location.search).get("site"));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  if (typeof localStorage === "undefined") return null;
+  const n = Number(localStorage.getItem(SITE_STORAGE_KEY));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * Owns the active location selection: the whole app (dashboard, sheets,
  * bins, reports) is scoped to one site at a time. The choice persists in
- * localStorage; an absent/stale choice falls back to the first site.
+ * localStorage per machine; each site keeps its own site day after day.
  */
 export function SiteProvider({ children }: { children: ReactNode }) {
   const { data } = trpc.core.sites.list.useQuery(undefined, {
@@ -38,11 +57,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   });
   const sites: SiteOption[] = data ?? [];
 
-  const [storedId, setStoredId] = useState<number | null>(() => {
-    if (typeof localStorage === "undefined") return null;
-    const n = Number(localStorage.getItem(SITE_STORAGE_KEY));
-    return Number.isFinite(n) ? n : null;
-  });
+  const [storedId, setStoredId] = useState<number | null>(readInitialSiteId);
 
   const siteId =
     storedId != null && sites.some((s) => s.id === storedId)

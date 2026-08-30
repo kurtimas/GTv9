@@ -15,6 +15,20 @@ export const coreRouter = createRouter({
         const [{ id }] = await getDb().insert(sites).values(input).$returningId();
         return getDb().query.sites.findFirst({ where: eq(sites.id, id) });
       }),
+    update: publicQuery
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          location: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        if (Object.keys(data).length === 0) throw new Error("Nothing to update");
+        await getDb().update(sites).set(data).where(eq(sites.id, id));
+        return getDb().query.sites.findFirst({ where: eq(sites.id, id) });
+      }),
   }),
 
   // -------------------------------------------------------------- bins
