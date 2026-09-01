@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
-import { MapPin } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import { ArrowRight, ChevronRight, MapPin } from "lucide-react";
 
 import { trpc } from "@/lib/trpc";
 import { cn, cropBadgeClass } from "@/lib/utils";
-import { useScale, type UseScale } from "@/hooks/useScale";
 import { useSite } from "@/providers/site";
 import { toast } from "@/components/ui/sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -19,7 +18,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -28,407 +26,277 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
-import { CROPS, fmtBu, fmtLbs } from "@contracts/grain";
+import { CROPS, fmtLbs } from "@contracts/grain";
 import type { SheetRow } from "@contracts/types";
-
-const SIM_MIN_LBS = 1_000;
-const SIM_MAX_LBS = 120_000;
-const SIM_STEP_LBS = 500;
 
 function fmtTime(d: Date): string {
   return new Date(d).toLocaleTimeString("en-US", { hour12: false });
 }
 
 /* ------------------------------------------------------------------ */
-/* Scale readout panel                                                 */
+/* Storage at a glance — bin fill strip                                */
 /* ------------------------------------------------------------------ */
 
-interface ScalePanelProps {
-  scale: UseScale;
-  /** Effective weight shown on the readout (live reading wins over manual). */
-  weightLbs: number | null;
-  onManualLbs: (lbs: number | null) => void;
+function fillPct(currentLbs: number, capacityLbs: number): number {
+  if (capacityLbs <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((currentLbs / capacityLbs) * 100)));
 }
 
-function ScalePanel({ scale, weightLbs, onManualLbs }: ScalePanelProps) {
-  const [simBase, setSimBase] = useState(45_000);
-  const [manualText, setManualText] = useState("");
-
-  const applyManual = () => {
-    const n = Number.parseInt(manualText.replace(/,/g, ""), 10);
-    if (!Number.isFinite(n) || n <= 0) {
-      toast.error("Enter a weight in whole pounds (e.g. 45230).");
-      return;
-    }
-    onManualLbs(n);
-    setManualText("");
-    toast.success(`Manual weight set — ${fmtLbs(n)} lb`);
-  };
-
-  const hasReading = weightLbs != null;
-  const readoutColor = !hasReading
-    ? "text-sidebar-foreground/40"
-    : scale.stable
-      ? "text-stable"
-      : "text-live";
-
-  const source = scale.connected
-    ? "USB scale"
-    : scale.simulator.active
-      ? "Simulator"
-      : hasReading
-        ? "Manual entry"
-        : "No source";
-
-  return (
-    <Card className="gt-panel">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <p className="gt-eyebrow">Scale readout</p>
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "gt-led",
-              hasReading && (scale.stable ? "gt-led-on" : "gt-led-live"),
-            )}
-          />
-          <span
-            className={cn(
-              "font-mono text-xs font-semibold uppercase tracking-widest",
-              !hasReading
-                ? "text-muted-foreground"
-                : scale.stable
-                  ? "text-stable"
-                  : "text-live",
-            )}
-          >
-            {!hasReading ? "NO SIGNAL" : scale.stable ? "STABLE" : "LIVE"}
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="gt-scan rounded-md border border-border bg-readout px-6 py-5">
-          <div
-            className={cn(
-              "font-mono text-5xl font-bold tabular-nums tracking-tight md:text-6xl",
-              readoutColor,
-            )}
-          >
-            {hasReading ? fmtLbs(weightLbs) : "———"}
-            <span className="ml-2 text-xl font-medium text-sidebar-foreground/60">lb</span>
-          </div>
-          <div className="mt-1 font-mono text-[10px] uppercase tracking-widest text-sidebar-foreground/60">
-            {source}
-            {scale.simulator.active ? ` · base ${fmtLbs(simBase)} lb` : ""}
-          </div>
-        </div>
-
-        {!scale.supported && (
-          <Alert>
-            <AlertTitle>USB scale not available in this browser</AlertTitle>
-            <AlertDescription>
-              Web Serial requires Chrome or Edge served over HTTPS or localhost. Use the
-              simulator or manual entry below until then.
-            </AlertDescription>
-          </Alert>
-        )}
-        {scale.error && (
-          <Alert variant="destructive">
-            <AlertTitle>Scale error</AlertTitle>
-            <AlertDescription>{scale.error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          {scale.supported &&
-            (scale.connected ? (
-              <Button variant="outline" onClick={() => void scale.disconnect()}>
-                Disconnect scale
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                disabled={scale.connecting}
-                onClick={() => void scale.connect()}
-              >
-                {scale.connecting ? "Connecting…" : "Connect USB scale"}
-              </Button>
-            ))}
-          <Button
-            variant={scale.simulator.active ? "secondary" : "outline"}
-            onClick={() =>
-              scale.simulator.active ? scale.simulator.stop() : scale.simulator.start()
-            }
-          >
-            <span className="gt-node" data-on={scale.simulator.active} />
-            Simulator
-          </Button>
-          <Badge variant="outline" className="font-mono">
-            {scale.connected ? "SCALE LINKED" : scale.connecting ? "LINKING…" : "SCALE OFFLINE"}
-          </Badge>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="sim-base">Simulator base</Label>
-              <span className="font-mono text-xs text-muted-foreground">
-                {fmtLbs(simBase)} lb
-              </span>
-            </div>
-            <Slider
-              id="sim-base"
-              min={SIM_MIN_LBS}
-              max={SIM_MAX_LBS}
-              step={SIM_STEP_LBS}
-              value={[simBase]}
-              onValueChange={(v) => {
-                const n = v[0] ?? simBase;
-                setSimBase(n);
-                scale.simulator.setBaseLbs(n);
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="manual-weight">Manual entry (lb)</Label>
-            <div className="flex gap-2">
-              <Input
-                id="manual-weight"
-                inputMode="numeric"
-                placeholder="e.g. 45230"
-                className="font-mono"
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applyManual();
-                }}
-              />
-              <Button variant="secondary" onClick={applyManual}>
-                Set
-              </Button>
-              {source === "Manual entry" && (
-                <Button variant="ghost" onClick={() => onManualLbs(null)}>
-                  Clear
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+/** green under 70%, amber 70–90%, red over 90% — as inline CSS colors. */
+function fillColor(pct: number): string {
+  if (pct > 90) return "hsl(var(--crit))";
+  if (pct >= 70) return "hsl(var(--live))";
+  return "hsl(var(--stable))";
 }
 
-/* ------------------------------------------------------------------ */
-/* Open sheet queue card                                               */
-/* ------------------------------------------------------------------ */
-
-interface SheetCardProps {
-  sheet: SheetRow;
-  weightLbs: number | null;
-  onChanged: () => void;
-}
-
-function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
-  const [truckId, setTruckId] = useState(sheet.lastTruckId ?? "");
-  const [driverName, setDriverName] = useState("");
-  const [binChoice, setBinChoice] = useState("auto");
-
-  // Destination bin picker — bins at this sheet's location, matching crop
-  // first, then least-filled (mirrors the server's auto-pick order).
+function BinStrip() {
+  const { siteId } = useSite();
   const binsQ = trpc.core.bins.list.useQuery(
-    { siteId: sheet.siteId },
-    { staleTime: 30_000 },
+    { siteId: siteId ?? undefined },
+    { enabled: siteId != null, refetchInterval: 15_000 },
   );
-  const siteBins = useMemo(() => {
-    const fill = (b: { currentLbs: number; capacityLbs: number }) =>
-      b.capacityLbs > 0 ? b.currentLbs / b.capacityLbs : 0;
-    return [...(binsQ.data ?? [])].sort((a, b) => {
-      const am = a.crop === sheet.crop ? 0 : 1;
-      const bm = b.crop === sheet.crop ? 0 : 1;
-      if (am !== bm) return am - bm;
-      return fill(a) - fill(b);
-    });
-  }, [binsQ.data, sheet.crop]);
-  const chosenBinId = binChoice !== "auto" ? Number(binChoice) : undefined;
-  const binSelect = (
-    <div className="space-y-1">
-      <Label>Destination bin</Label>
-      <Select value={binChoice} onValueChange={setBinChoice}>
-        <SelectTrigger className="h-8 font-mono text-xs">
-          <SelectValue placeholder="Auto" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="auto" className="font-mono text-xs">
-            Auto — least-filled {sheet.crop} bin
-          </SelectItem>
-          {siteBins.map((b) => (
-            <SelectItem key={b.id} value={String(b.id)} className="font-mono text-xs">
-              {b.name} — {b.crop}
-              {b.capacityLbs > 0
-                ? ` · ${Math.round((b.currentLbs / b.capacityLbs) * 100)}% full`
-                : ""}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {siteBins.length === 0 && !binsQ.isPending && (
-        <p className="font-mono text-[11px] text-muted-foreground">
-          No bins at this location — loads stay unassigned.
-        </p>
-      )}
-      {binChoice === "auto" && sheet.activeLoad?.binId != null && (
-        <p className="font-mono text-[11px] text-muted-foreground">
-          Picked at weigh-in:{" "}
-          {siteBins.find((b) => b.id === sheet.activeLoad?.binId)?.name ??
-            `bin #${sheet.activeLoad.binId}`}
-        </p>
-      )}
-    </div>
-  );
+  const bins = binsQ.data ?? [];
+  if (bins.length === 0) return null;
 
-  const weighFirst = trpc.sheets.weighFirst.useMutation({
-    onSuccess: (data, vars) => {
-      toast.success(`Load #${data.loadNo} weighed in — ${fmtLbs(vars.weightLbs)} lb`);
-      onChanged();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-  const weighSecond = trpc.sheets.weighSecond.useMutation({
-    onSuccess: (data) => {
-      toast.success(
-        `Load complete — net ${fmtLbs(data.netLbs)} lb · ${fmtBu(data.netBushels)} bu`,
-        {
-          description: data.sheetFull
-            ? `Sheet is FULL (${sheet.maxLoads}/${sheet.maxLoads} loads)`
-            : undefined,
-        },
-      );
-      onChanged();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const outbound = sheet.direction === "OUTBOUND";
-  const active = sheet.activeLoad;
-  const firstLbs = active ? (outbound ? active.tareLbs : active.grossLbs) : null;
-  const busy = weighFirst.isPending || weighSecond.isPending;
-  const canWeigh = weightLbs != null && !busy;
+  const capacity = bins.reduce((s, b) => s + b.capacityLbs, 0);
+  const current = bins.reduce((s, b) => s + b.currentLbs, 0);
+  const overall = fillPct(current, capacity);
 
   return (
     <Card className="gt-panel">
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-lg font-bold text-primary">{sheet.ticketNo}</span>
-          <Badge
-            variant="outline"
-            className={cn(
-              "font-mono",
-              outbound ? "border-primary/60 text-primary" : "border-live/60 text-live",
-            )}
-          >
-            {sheet.direction}
-          </Badge>
-        </div>
-        <span className="font-mono text-xs text-muted-foreground">
-          {sheet.completedLoads}/{sheet.maxLoads} loads
-        </span>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-          <span className="font-semibold">{sheet.farmerName ?? "—"}</span>
-          {sheet.lotCode && (
-            <span className="font-mono text-xs text-muted-foreground">{sheet.lotCode}</span>
-          )}
-          <Badge
-            variant="outline"
-            className={cn("font-mono text-[10px] uppercase", cropBadgeClass(sheet.crop))}
-          >
-            {sheet.crop}
-          </Badge>
-        </div>
-
-        <Separator />
-
-        {active == null ? (
-          <>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor={`truck-${sheet.id}`}>Truck ID</Label>
-                <Input
-                  id={`truck-${sheet.id}`}
-                  className="h-8 font-mono"
-                  placeholder="e.g. TRK-14"
-                  value={truckId}
-                  onChange={(e) => setTruckId(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor={`driver-${sheet.id}`}>Driver</Label>
-                <Input
-                  id={`driver-${sheet.id}`}
-                  className="h-8"
-                  placeholder="Driver name"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                />
-              </div>
-            </div>
-            <Button
-              className="h-14 w-full bg-go text-lg font-bold hover:bg-go/90"
-              disabled={!canWeigh}
-              onClick={() => {
-                if (weightLbs == null) return;
-                weighFirst.mutate({
-                  id: sheet.id,
-                  weightLbs,
-                  truckId: truckId.trim() || undefined,
-                  driverName: driverName.trim() || undefined,
-                  binId: chosenBinId,
-                });
-              }}
+      <CardContent className="flex flex-col gap-5 p-4 md:flex-row md:items-center">
+        <div className="flex shrink-0 items-center gap-4 md:border-r md:border-border md:pr-6">
+          <div>
+            <p className="gt-eyebrow">Storage</p>
+            <div
+              className="font-mono text-2xl font-black tabular-nums leading-none"
+              style={{ color: fillColor(overall) }}
             >
-              {outbound ? "WEIGH IN (EMPTY)" : "WEIGH IN"}
-              {weightLbs != null ? ` — ${fmtLbs(weightLbs)} lb` : ""}
-            </Button>
-            {binSelect}
-          </>
-        ) : (
-          <>
-            <div className="gt-scan flex items-center justify-between rounded-md border border-border bg-readout px-4 py-3">
-              <span className="gt-eyebrow">
-                {outbound ? "Tare captured" : "Gross captured"}
-                {active.truckId ? ` · ${active.truckId}` : ""}
-              </span>
-              <span className="font-mono text-xl font-semibold tabular-nums text-live">
-                {fmtLbs(firstLbs)} lb
-              </span>
+              {overall}%
+              <span className="ml-1 text-xs font-medium text-muted-foreground">full</span>
             </div>
-            {binSelect}
-            <Button
-              className="h-14 w-full text-lg font-bold"
-              disabled={!canWeigh}
-              onClick={() => {
-                if (weightLbs == null) return;
-                weighSecond.mutate({ id: sheet.id, weightLbs, binId: chosenBinId });
-              }}
-            >
-              WEIGH OUT{weightLbs != null ? ` — ${fmtLbs(weightLbs)} lb` : ""}
-            </Button>
-          </>
-        )}
-        {weightLbs == null && (
-          <p className="font-mono text-[11px] text-muted-foreground">
-            No weight on the scale — connect, start the simulator, or use manual entry.
-          </p>
-        )}
+            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+              {fmtLbs(current)} of {fmtLbs(capacity)} lb
+            </p>
+          </div>
+        </div>
+        <div className="grid flex-1 grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 xl:grid-cols-6">
+          {bins.map((b) => {
+            const pct = fillPct(b.currentLbs, b.capacityLbs);
+            return (
+              <div key={b.id} title={`${b.name} · ${b.crop} · ${pct}% full`}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-xs font-semibold">{b.name}</span>
+                  <span
+                    className="font-mono text-xs font-semibold tabular-nums"
+                    style={{ color: fillColor(pct) }}
+                  >
+                    {pct}%
+                  </span>
+                </div>
+                <p className="truncate font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {b.crop}
+                </p>
+                <div className="mt-1.5 h-1.5 rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full transition-[width] duration-500"
+                    style={{ width: `${pct}%`, background: fillColor(pct) }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Open weight sheets — pick one to open the scale for it              */
+/* ------------------------------------------------------------------ */
+
+function OpenSheetsCard({
+  sheets,
+  pending,
+  onCreated,
+}: {
+  sheets: SheetRow[];
+  pending: boolean;
+  onCreated: (id: number) => void;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="gt-eyebrow">Open weight sheets</p>
+          {!pending && (
+            <Badge variant="secondary" className="font-mono">
+              {sheets.length}
+            </Badge>
+          )}
+        </div>
+        <NewSheetDialog onCreated={onCreated} />
+      </div>
+
+      {pending ? (
+        <div className="space-y-2">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : sheets.length === 0 ? (
+        <Card className="gt-panel">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No open weight sheets — start one when a truck arrives.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="gt-panel overflow-hidden">
+          {sheets.map((sheet, i) => (
+            <SheetRowButton key={sheet.id} sheet={sheet} first={i === 0} />
+          ))}
+        </Card>
+      )}
+    </section>
+  );
+}
+
+function SheetRowButton({ sheet, first }: { sheet: SheetRow; first: boolean }) {
+  const navigate = useNavigate();
+  const active = sheet.activeLoad;
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(`/scale/${sheet.id}`)}
+      className={cn(
+        "flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-left transition-colors hover:bg-secondary/50",
+        !first && "border-t border-border",
+      )}
+    >
+      <span className="min-w-0 flex-1 basis-48">
+        <span className="block truncate text-sm font-semibold">
+          {sheet.farmerName ?? "—"}
+        </span>
+        <span className="block truncate font-mono text-xs text-muted-foreground">
+          {sheet.ticketNo} · {sheet.completedLoads}/{sheet.maxLoads} loads
+          {sheet.lotCode ? ` · ${sheet.lotCode}` : ""}
+        </span>
+      </span>
+      <Badge
+        variant="outline"
+        className={cn(
+          "font-mono text-[10px] uppercase",
+          cropBadgeClass(sheet.crop),
+        )}
+      >
+        {sheet.crop}
+      </Badge>
+      {active ? (
+        <Badge
+          variant="outline"
+          className="border-live/60 font-mono text-[10px] uppercase tracking-wider text-live"
+        >
+          On the lot
+        </Badge>
+      ) : (
+        <Badge
+          variant="outline"
+          className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+        >
+          Waiting
+        </Badge>
+      )}
+      <ChevronRight className="h-4 w-4 flex-none text-muted-foreground" />
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* On the lot — trucks weighed in and still unloading                  */
+/* ------------------------------------------------------------------ */
+
+function OnTheLotCard({ sheets, pending }: { sheets: SheetRow[]; pending: boolean }) {
+  const navigate = useNavigate();
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <p className="gt-eyebrow">On the lot</p>
+        {!pending && sheets.length > 0 && (
+          <Badge
+            variant="outline"
+            className="border-live/60 font-mono text-[10px] uppercase tracking-wider text-live"
+          >
+            {sheets.length}
+          </Badge>
+        )}
+      </div>
+
+      {pending ? (
+        <Card className="gt-panel">
+          <CardContent className="p-4">
+            <Skeleton className="h-12 w-full" />
+          </CardContent>
+        </Card>
+      ) : sheets.length === 0 ? (
+        <Card className="gt-panel">
+          <CardContent className="py-6 text-center text-sm text-muted-foreground">
+            No trucks on the lot.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="gt-panel overflow-hidden">
+          {sheets.map((sheet, i) => {
+            const active = sheet.activeLoad!;
+            const since = new Date(
+              active.grossAt ?? active.tareAt ?? active.createdAt,
+            );
+            return (
+              <button
+                key={sheet.id}
+                type="button"
+                onClick={() => navigate(`/scale/${sheet.id}`)}
+                className={cn(
+                  "flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors hover:bg-secondary/50",
+                  i > 0 && "border-t border-border",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="gt-led gt-led-warn" />
+                  <span className="truncate font-mono text-sm font-bold text-primary">
+                    {sheet.ticketNo}
+                  </span>
+                  {active.truckId && (
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {active.truckId}
+                    </span>
+                  )}
+                </span>
+                <span className="truncate text-sm font-semibold">
+                  {sheet.farmerName ?? "—"}
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    since {fmtTime(since)} · {fmtLbs(
+                      sheet.direction === "OUTBOUND" ? active.tareLbs : active.grossLbs,
+                    )}{" "}
+                    captured
+                  </span>
+                  <span className="flex items-center gap-1 font-mono text-xs font-bold uppercase tracking-wider text-live">
+                    Weigh out
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </Card>
+      )}
+    </section>
   );
 }
 
@@ -436,7 +304,7 @@ function SheetCard({ sheet, weightLbs, onChanged }: SheetCardProps) {
 /* New weight sheet dialog                                             */
 /* ------------------------------------------------------------------ */
 
-function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
+function NewSheetDialog({ onCreated }: { onCreated: (sheetId: number) => void }) {
   const [open, setOpen] = useState(false);
   const { siteId, sites } = useSite();
   const site = sites.find((s) => s.id === siteId);
@@ -455,7 +323,7 @@ function NewSheetDialog({ onCreated }: { onCreated: () => void }) {
   const create = trpc.sheets.create.useMutation({
     onSuccess: (data) => {
       toast.success(`Weight sheet ${data.ticketNo} opened`);
-      onCreated();
+      onCreated(data.id);
       setOpen(false);
       setLotId("");
       setFarmerId("");
@@ -632,7 +500,7 @@ function ActivityFeed() {
           <p className="text-sm text-muted-foreground">No activity yet.</p>
         ) : (
           <ul className="space-y-2">
-            {activity.data.map((ev) => (
+            {activity.data.slice(0, 12).map((ev) => (
               <li key={ev.id} className="font-mono text-xs leading-relaxed">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-semibold text-primary">{ev.ticketNo}</span>
@@ -658,69 +526,38 @@ function ActivityFeed() {
 /* ------------------------------------------------------------------ */
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { siteId } = useSite();
-  const scale = useScale();
-  const [manualLbs, setManualLbs] = useState<number | null>(null);
 
   const openSheets = trpc.sheets.open.useQuery(
     { siteId: siteId ?? undefined },
     { enabled: siteId != null, refetchInterval: 5_000 },
   );
 
-  const invalidateSheets = () => {
+  const handleCreated = (id: number) => {
     void utils.sheets.open.invalidate();
     void utils.sheets.list.invalidate();
-    void utils.core.bins.list.invalidate();
+    navigate(`/scale/${id}`);
   };
 
-  // Live scale/simulator readings win over the manual override.
-  const effectiveLbs = scale.weightLbs ?? manualLbs;
+  const sheets = openSheets.data ?? [];
+  const onLot = sheets.filter((s) => s.activeLoad != null);
 
   return (
     <div className="space-y-4">
+      <BinStrip />
+
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <OpenSheetsCard
+          sheets={sheets}
+          pending={openSheets.isPending}
+          onCreated={handleCreated}
+        />
         <div className="space-y-4">
-          <ScalePanel scale={scale} weightLbs={effectiveLbs} onManualLbs={setManualLbs} />
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <p className="gt-eyebrow">Open sheets</p>
-              {openSheets.data && (
-                <Badge variant="secondary" className="font-mono">
-                  {openSheets.data.length}
-                </Badge>
-              )}
-            </div>
-            <NewSheetDialog onCreated={invalidateSheets} />
-          </div>
-
-          {openSheets.isPending ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Skeleton className="h-56 w-full" />
-              <Skeleton className="h-56 w-full" />
-            </div>
-          ) : !openSheets.data || openSheets.data.length === 0 ? (
-            <Card className="gt-panel">
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No open weight sheets — start one when a truck arrives.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {openSheets.data.map((sheet) => (
-                <SheetCard
-                  key={sheet.id}
-                  sheet={sheet}
-                  weightLbs={effectiveLbs}
-                  onChanged={invalidateSheets}
-                />
-              ))}
-            </div>
-          )}
+          <OnTheLotCard sheets={onLot} pending={openSheets.isPending} />
+          <ActivityFeed />
         </div>
-
-        <ActivityFeed />
       </div>
     </div>
   );

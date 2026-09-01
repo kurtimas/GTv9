@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router";
 import {
   LayoutDashboard,
+  Scale as ScaleIcon,
   FileSpreadsheet,
   Warehouse,
   Users,
@@ -28,6 +29,7 @@ const THEME_STORAGE_KEY = "gt-theme";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/scale", label: "Scale", icon: ScaleIcon },
   { to: "/sheets", label: "Weight Sheets", icon: FileSpreadsheet },
   { to: "/bins", label: "Bins", icon: Warehouse },
   { to: "/people", label: "Farmers & Lots", icon: Users },

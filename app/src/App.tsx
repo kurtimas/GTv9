@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
+import Scale from "./pages/Scale";
 import Sheets from "./pages/Sheets";
 import Bins from "./pages/Bins";
 import People from "./pages/People";
@@ -12,6 +13,8 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/scale" element={<Scale />} />
+        <Route path="/scale/:sheetId" element={<Scale />} />
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/bins" element={<Bins />} />
         <Route path="/people" element={<People />} />
