@@ -65,6 +65,7 @@ export function AdminSites() {
 
   const create = trpc.core.sites.create.useMutation({
     onSuccess: (site) => {
+      if (!site) return;
       toast.success(`Site "${site.name}" created`);
       setNewName("");
       setNewLocation("");
@@ -75,6 +76,7 @@ export function AdminSites() {
 
   const update = trpc.core.sites.update.useMutation({
     onSuccess: (site) => {
+      if (!site) return;
       toast.success(`Site "${site.name}" saved`);
       setEditingId(null);
       invalidate();

@@ -81,6 +81,36 @@ function EmptyRow({ cols, message }: { cols: number; message: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin password field (farmer/landlord changes are admin-gated server-side)
+// ---------------------------------------------------------------------------
+
+function AdminPasswordField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>Admin password</Label>
+      <Input
+        id={id}
+        type="password"
+        autoComplete="off"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <p className="text-xs text-muted-foreground">
+        Changing farmers or landlords requires the site admin password.
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Farmer dialog (add + edit)
 // ---------------------------------------------------------------------------
 
@@ -95,6 +125,7 @@ function FarmerDialog({
   const [name, setName] = useState(farmer?.name ?? "");
   const [phone, setPhone] = useState(farmer?.phone ?? "");
   const [email, setEmail] = useState(farmer?.email ?? "");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const onSuccess = async (verb: string) => {
     toast.success(`Farmer "${name.trim()}" ${verb}`);
@@ -123,8 +154,13 @@ function FarmerDialog({
       toast.error("That doesn't look like a valid email address");
       return;
     }
+    if (!adminPassword) {
+      toast.error("Admin password is required to add or edit farmers");
+      return;
+    }
     if (farmer) {
       updateFarmer.mutate({
+        adminPassword,
         id: farmer.id,
         name: trimmedName,
         phone: trimmedPhone,
@@ -132,6 +168,7 @@ function FarmerDialog({
       });
     } else {
       createFarmer.mutate({
+        adminPassword,
         name: trimmedName,
         phone: trimmedPhone || undefined,
         email: trimmedEmail || undefined,
@@ -183,6 +220,11 @@ function FarmerDialog({
               />
             </div>
           </div>
+          <AdminPasswordField
+            id="farmer-admin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -205,6 +247,7 @@ function LandlordDialog({ onClose }: { onClose: () => void }) {
   const utils = trpc.useUtils();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const createLandlord = trpc.people.landlords.create.useMutation({
     onSuccess: async () => {
@@ -220,7 +263,12 @@ function LandlordDialog({ onClose }: { onClose: () => void }) {
       toast.error("Landlord name is required");
       return;
     }
+    if (!adminPassword) {
+      toast.error("Admin password is required to add landlords");
+      return;
+    }
     createLandlord.mutate({
+      adminPassword,
       name: name.trim(),
       phone: phone.trim() || undefined,
     });
@@ -256,6 +304,11 @@ function LandlordDialog({ onClose }: { onClose: () => void }) {
               className="font-mono"
             />
           </div>
+          <AdminPasswordField
+            id="landlord-admin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

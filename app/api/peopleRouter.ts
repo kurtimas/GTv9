@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
+import { assertAdmin } from "./lib/adminPassword";
 import { farmers, landlords, lots } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { CROPS } from "@contracts/grain";
@@ -13,12 +14,14 @@ export const peopleRouter = createRouter({
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           name: z.string().min(1),
           phone: z.string().optional(),
           email: z.string().email().optional().or(z.literal("")),
         }),
       )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const [{ id }] = await getDb()
           .insert(farmers)
           .values({ name: input.name, phone: input.phone || null, email: input.email || null })
@@ -28,6 +31,7 @@ export const peopleRouter = createRouter({
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           name: z.string().min(1).optional(),
           phone: z.string().optional(),
@@ -35,7 +39,9 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
+        if (Object.keys(data).length === 0) throw new Error("Nothing to update");
         await getDb().update(farmers).set(data).where(eq(farmers.id, id));
         return getDb().query.farmers.findFirst({ where: eq(farmers.id, id) });
       }),
@@ -45,8 +51,15 @@ export const peopleRouter = createRouter({
   landlords: createRouter({
     list: publicQuery.query(() => getDb().select().from(landlords).orderBy(landlords.name)),
     create: publicQuery
-      .input(z.object({ name: z.string().min(1), phone: z.string().optional() }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          name: z.string().min(1),
+          phone: z.string().optional(),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const [{ id }] = await getDb()
           .insert(landlords)
           .values({ name: input.name, phone: input.phone || null })

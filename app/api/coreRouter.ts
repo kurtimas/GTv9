@@ -1,32 +1,10 @@
 import { z } from "zod";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { env } from "./lib/env";
+import { assertAdmin, verifyAdminPassword } from "./lib/adminPassword";
 import { sites, bins, loads } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { CROPS } from "@contracts/grain";
-
-// --- Admin password (guards site create/edit) ---------------------------
-let warnedDefaultPassword = false;
-const adminHash = () => createHash("sha256").update(env.ADMIN_PASSWORD).digest();
-
-function verifyAdminPassword(given: string): boolean {
-  if (!warnedDefaultPassword && env.ADMIN_PASSWORD === "grain-admin") {
-    warnedDefaultPassword = true;
-    console.warn(
-      "[admin] Using default ADMIN_PASSWORD — set ADMIN_PASSWORD in the environment to change it",
-    );
-  }
-  const h = createHash("sha256").update(given).digest();
-  return h.length === adminHash().length && timingSafeEqual(h, adminHash());
-}
-
-function assertAdmin(given: string | undefined): void {
-  if (!given || !verifyAdminPassword(given)) {
-    throw new Error("Admin password required");
-  }
-}
 
 export const coreRouter = createRouter({
   // ------------------------------------------------------------- admin
@@ -66,9 +44,8 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        assertAdmin(input.adminPassword);
-        const { id, ...data } = input;
-        delete data.adminPassword;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
         if (Object.keys(data).length === 0) throw new Error("Nothing to update");
         await getDb().update(sites).set(data).where(eq(sites.id, id));
         return getDb().query.sites.findFirst({ where: eq(sites.id, id) });
