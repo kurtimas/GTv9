@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
+import { assertAdmin } from "./lib/adminPassword";
 import { farmers, landlords, lots } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { CROPS } from "@contracts/grain";
@@ -13,12 +14,14 @@ export const peopleRouter = createRouter({
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           name: z.string().min(1),
           phone: z.string().optional(),
           email: z.string().email().optional().or(z.literal("")),
         }),
       )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const [{ id }] = await getDb()
           .insert(farmers)
           .values({ name: input.name, phone: input.phone || null, email: input.email || null })
@@ -28,6 +31,7 @@ export const peopleRouter = createRouter({
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           name: z.string().min(1).optional(),
           phone: z.string().optional(),
@@ -35,7 +39,9 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
+        if (Object.keys(data).length === 0) throw new Error("Nothing to update");
         await getDb().update(farmers).set(data).where(eq(farmers.id, id));
         return getDb().query.farmers.findFirst({ where: eq(farmers.id, id) });
       }),
@@ -45,8 +51,15 @@ export const peopleRouter = createRouter({
   landlords: createRouter({
     list: publicQuery.query(() => getDb().select().from(landlords).orderBy(landlords.name)),
     create: publicQuery
-      .input(z.object({ name: z.string().min(1), phone: z.string().optional() }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          name: z.string().min(1),
+          phone: z.string().optional(),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const [{ id }] = await getDb()
           .insert(landlords)
           .values({ name: input.name, phone: input.phone || null })
@@ -73,19 +86,29 @@ export const peopleRouter = createRouter({
     }),
     // suggested next lot code for a farmer: 706C-<INITIALS>-<YY><NN>
     nextCode: publicQuery
-      .input(z.object({ farmerId: z.number() }))
+      .input(
+        z.object({
+          farmerId: z.number(),
+          landlordId: z.number().nullable().optional(),
+        }),
+      )
       .query(async ({ input }) => {
         const db = getDb();
         const farmer = await db.query.farmers.findFirst({
           where: eq(farmers.id, input.farmerId),
         });
         if (!farmer) throw new Error("Farmer not found");
+        const landlord =
+          input.landlordId != null
+            ? await db.query.landlords.findFirst({ where: eq(landlords.id, input.landlordId) })
+            : null;
         const rows = await db.select({ code: lots.code }).from(lots);
-        return { code: nextLotCode(rows.map((r) => r.code), farmer.name) };
+        return { code: nextLotCode(rows.map((r) => r.code), farmer.name, landlord?.name) };
       }),
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           farmerId: z.number(),
           landlordId: z.number().nullable().optional(),
           code: z.string().min(1),
@@ -95,15 +118,18 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
+        const { adminPassword, ...lot } = input;
         const [{ id }] = await getDb()
           .insert(lots)
-          .values({ ...input, landlordId: input.landlordId ?? null })
+          .values({ ...lot, landlordId: lot.landlordId ?? null })
           .$returningId();
         return getDb().query.lots.findFirst({ where: eq(lots.id, id) });
       }),
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           landlordId: z.number().nullable().optional(),
           landlordSplitPct: z.number().min(0).max(100).optional(),
@@ -111,15 +137,23 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
         await getDb().update(lots).set(data).where(eq(lots.id, id));
         return getDb().query.lots.findFirst({ where: eq(lots.id, id) });
       }),
     // Lots stay open until the grower says the lot is done. While CLOSED no
     // new weight sheets can be opened against the lot; reopening is allowed.
     setStatus: publicQuery
-      .input(z.object({ id: z.number(), status: z.enum(["OPEN", "CLOSED"]) }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          id: z.number(),
+          status: z.enum(["OPEN", "CLOSED"]),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const lot = await getDb().query.lots.findFirst({ where: eq(lots.id, input.id) });
         if (!lot) throw new Error("Lot not found");
         await getDb()

@@ -1,73 +1,38 @@
-# React + TypeScript + Vite
+# Grain Tracker — main-office portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The office-side companion to the scale-house app (`../app`). Scale houses
+push their end-of-day packages here over HTTP (shared `x-gt-sync-key`
+secret; receiver in `api/syncReceiver.ts`), and the portal mirrors
+farmers/landlords/lots and each site's sheets, loads, and bin levels.
 
-Currently, two official plugins are available:
+Same stack as `app/` (React 19 + Vite frontend, Hono + tRPC + Drizzle
+backend). Routers: `core` / `people` / `sheets` (shared with the scale
+house) plus `office` (per-site overview, today's loads, EOD upload
+history) and the `/api/sync` receiver.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## What the UI has today
 
-## React Compiler
+- `/` — office home: today's totals across sites, per-site bin levels and
+  last-upload times, and the end-of-day report history table.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Not built yet (backend ready)
 
-## Expanding the ESLint configuration
+Management pages for the mirrored data (sheets archive, bins, people/lots,
+reports drill-down) are not implemented — the routers exist and the smoke
+script exercises them, but there is no UI beyond the home page. The
+`siteId`-scoped queries in `sheets.*` are the intended starting point.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Commands
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev      # Vite dev server (embedded SQLite when MySQL is absent)
+npm run check    # typecheck
+npm run test     # vitest unit tests
+npm run build    # client + server bundles → dist/
+npm start        # production server on :3000 (NODE_ENV=production)
+npm run smoke    # end-to-end tRPC smoke test against a running server
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The receiver authenticates inbound syncs with the `x-gt-sync-key` header
+matched against the `officeKey` setting — the same shared key the scale
+house stores in its sync settings.

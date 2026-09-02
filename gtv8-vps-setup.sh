@@ -17,7 +17,9 @@ SEED_DEMO="false"
 
 DOMAIN="grain.kurt.wtf"
 ADMIN_USER="vpsadmin"
-ADMIN_PASSWORD="weliketoparty69"
+# Set at runtime — export ADMIN_PASSWORD before running, or answer the prompt
+# below. Never commit a real password to this file.
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 
 INSTALL_GUI=true
 INSTALL_BROWSER=true
@@ -80,6 +82,10 @@ log "2/10  Admin user: $ADMIN_USER"
 #-------------------------------------------------------------------------------
 if ! id "$ADMIN_USER" &>/dev/null; then
     adduser --disabled-password --gecos "" "$ADMIN_USER"
+    if [[ -z "$ADMIN_PASSWORD" ]]; then
+        read -r -s -p "Set a login password for $ADMIN_USER: " ADMIN_PASSWORD; echo
+    fi
+    [[ -n "$ADMIN_PASSWORD" ]] || die "Admin password required — re-run with ADMIN_PASSWORD='<password>' ./gtv8-vps-setup.sh"
     echo "${ADMIN_USER}:${ADMIN_PASSWORD}" | chpasswd
     usermod -aG sudo "$ADMIN_USER"
 fi
@@ -200,27 +206,8 @@ else
 fi
 
 [[ -f "$REPO_DIR/app/Dockerfile" ]] || die "No Dockerfile at $REPO_DIR/app"
-
-#-------------------------------------------------------------------------------
-log "6b/10  Patching Dockerfile for stale/missing lockfile"
-#-------------------------------------------------------------------------------
-DF="$REPO_DIR/app/Dockerfile"
-
-# Always use npm install in Docker builds to avoid stale-lockfile failures.
-# If the repo has a good package-lock.json, npm install will respect it.
-# If it's stale or missing, npm install regenerates it and continues.
-sed -i 's/COPY package\.json package-lock\.json \.\//COPY package.json .\//' "$DF" 2>/dev/null || true
-sed -i 's/COPY package\.json package-lock\.json \.\//COPY package.json .\//' "$DF" 2>/dev/null || true
-sed -i 's/RUN npm ci/RUN npm install/' "$DF" 2>/dev/null || true
-sed -i 's/RUN npm ci/RUN npm install/' "$DF" 2>/dev/null || true
-
-# Ensure we have a valid COPY package.json line
-if ! grep -q 'COPY package.json' "$DF"; then
-    die "Dockerfile missing COPY package.json — check $DF"
-fi
-
-# Show what we're building with
-grep -n -E "FROM|COPY package|RUN npm" "$DF" || true
+[[ -f "$REPO_DIR/app/package-lock.json" ]] \
+    || die "Missing $REPO_DIR/app/package-lock.json — the Docker build runs npm ci"
 
 #-------------------------------------------------------------------------------
 log "7/10  Generating stack in $DEPLOY_DIR"
@@ -231,6 +218,9 @@ if [[ ! -f "$DEPLOY_DIR/.env" ]]; then
     MYSQL_ROOT_PW=$(openssl rand -hex 24)
     MYSQL_PW=$(openssl rand -hex 24)
     APP_SECRET=$(openssl rand -hex 32)
+    # Password for the APP's admin dialogs (sites/farmers/lots/bins/sync) —
+    # distinct from the Linux login password above, on purpose.
+    APP_ADMIN_PW=$(openssl rand -base64 18)
     cat > "$DEPLOY_DIR/.env" <<EOF
 MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PW
 MYSQL_DATABASE=graintracker
@@ -240,9 +230,14 @@ DATABASE_URL=mysql://grain:$MYSQL_PW@mysql:3306/graintracker
 APP_ID=grain-tracker-local
 APP_SECRET=$APP_SECRET
 SEED_DEMO=$SEED_DEMO
+ADMIN_PASSWORD=$APP_ADMIN_PW
+# Day boundaries (daily report, end-of-day close) follow this zone.
+TZ=$TIMEZONE
 EOF
     chmod 600 "$DEPLOY_DIR/.env"
     log "Generated secrets."
+    log "APP admin password (for the app's admin dialogs) — save it now:"
+    printf '    %s\n' "$APP_ADMIN_PW"
 else
     log "Keeping existing .env"
 fi

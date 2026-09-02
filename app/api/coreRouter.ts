@@ -69,6 +69,7 @@ export const coreRouter = createRouter({
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           siteId: z.number(),
           name: z.string().min(1),
           crop: z.enum(CROPS),
@@ -76,12 +77,15 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const [{ id }] = await getDb().insert(bins).values(input).$returningId();
+        assertAdmin(input.adminPassword);
+        const { adminPassword, ...bin } = input;
+        const [{ id }] = await getDb().insert(bins).values(bin).$returningId();
         return getDb().query.bins.findFirst({ where: eq(bins.id, id) });
       }),
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           name: z.string().min(1).optional(),
           crop: z.enum(CROPS).optional(),
@@ -89,14 +93,16 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
         await getDb().update(bins).set(data).where(eq(bins.id, id));
         return getDb().query.bins.findFirst({ where: eq(bins.id, id) });
       }),
     // Delete an empty bin with no ticket history
     delete: publicQuery
-      .input(z.object({ id: z.number() }))
+      .input(z.object({ adminPassword: z.string(), id: z.number() }))
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const db = getDb();
         const bin = await db.query.bins.findFirst({ where: eq(bins.id, input.id) });
         if (!bin) throw new Error("Bin not found");
@@ -113,8 +119,15 @@ export const coreRouter = createRouter({
       }),
     // Manual level correction (e.g. after physical measurement)
     adjust: publicQuery
-      .input(z.object({ id: z.number(), currentLbs: z.number().int().min(0) }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          id: z.number(),
+          currentLbs: z.number().int().min(0),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         await getDb()
           .update(bins)
           .set({ currentLbs: input.currentLbs })

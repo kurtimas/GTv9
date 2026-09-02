@@ -1,36 +1,75 @@
 import { z } from "zod";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
+import { assertAdmin, verifyAdminPassword } from "./lib/adminPassword";
 import { sites, bins, loads } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { CROPS } from "@contracts/grain";
 
 export const coreRouter = createRouter({
+  // ------------------------------------------------------------- admin
+  admin: createRouter({
+    // Mutation (not query) so the password travels in the POST body.
+    verify: publicQuery
+      .input(z.object({ password: z.string() }))
+      .mutation(async ({ input }) => ({ ok: verifyAdminPassword(input.password) })),
+  }),
+
   // ------------------------------------------------------------- sites
   sites: createRouter({
     list: publicQuery.query(() => getDb().select().from(sites).orderBy(sites.name)),
     create: publicQuery
-      .input(z.object({ name: z.string().min(1), location: z.string().optional() }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          name: z.string().min(1),
+          location: z.string().optional(),
+        }),
+      )
       .mutation(async ({ input }) => {
-        const [{ id }] = await getDb().insert(sites).values(input).$returningId();
+        assertAdmin(input.adminPassword);
+        const [{ id }] = await getDb()
+          .insert(sites)
+          .values({ name: input.name, location: input.location })
+          .$returningId();
+        return getDb().query.sites.findFirst({ where: eq(sites.id, id) });
+      }),
+    update: publicQuery
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          location: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
+        if (Object.keys(data).length === 0) throw new Error("Nothing to update");
+        await getDb().update(sites).set(data).where(eq(sites.id, id));
         return getDb().query.sites.findFirst({ where: eq(sites.id, id) });
       }),
   }),
 
   // -------------------------------------------------------------- bins
   bins: createRouter({
-    list: publicQuery.query(async () => {
-      const db = getDb();
-      const rows = await db
-        .select({ bin: bins, siteName: sites.name })
-        .from(bins)
-        .leftJoin(sites, eq(bins.siteId, sites.id))
-        .orderBy(sites.name, bins.name);
-      return rows.map((r) => ({ ...r.bin, siteName: r.siteName }));
-    }),
+    list: publicQuery
+      .input(z.object({ siteId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = getDb();
+        const rows = await db
+          .select({ bin: bins, siteName: sites.name })
+          .from(bins)
+          .leftJoin(sites, eq(bins.siteId, sites.id))
+          .where(input?.siteId ? eq(bins.siteId, input.siteId) : undefined)
+          .orderBy(sites.name, bins.name);
+        return rows.map((r) => ({ ...r.bin, siteName: r.siteName }));
+      }),
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           siteId: z.number(),
           name: z.string().min(1),
           crop: z.enum(CROPS),
@@ -38,12 +77,15 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const [{ id }] = await getDb().insert(bins).values(input).$returningId();
+        assertAdmin(input.adminPassword);
+        const { adminPassword, ...bin } = input;
+        const [{ id }] = await getDb().insert(bins).values(bin).$returningId();
         return getDb().query.bins.findFirst({ where: eq(bins.id, id) });
       }),
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           name: z.string().min(1).optional(),
           crop: z.enum(CROPS).optional(),
@@ -51,14 +93,16 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
         await getDb().update(bins).set(data).where(eq(bins.id, id));
         return getDb().query.bins.findFirst({ where: eq(bins.id, id) });
       }),
     // Delete an empty bin with no ticket history
     delete: publicQuery
-      .input(z.object({ id: z.number() }))
+      .input(z.object({ adminPassword: z.string(), id: z.number() }))
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const db = getDb();
         const bin = await db.query.bins.findFirst({ where: eq(bins.id, input.id) });
         if (!bin) throw new Error("Bin not found");
@@ -75,8 +119,15 @@ export const coreRouter = createRouter({
       }),
     // Manual level correction (e.g. after physical measurement)
     adjust: publicQuery
-      .input(z.object({ id: z.number(), currentLbs: z.number().int().min(0) }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          id: z.number(),
+          currentLbs: z.number().int().min(0),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         await getDb()
           .update(bins)
           .set({ currentLbs: input.currentLbs })

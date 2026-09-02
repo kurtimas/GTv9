@@ -325,7 +325,7 @@ function WeighConsole({ sheet, weightLbs, onChanged }: WeighConsoleProps) {
   const outbound = sheet.direction === "OUTBOUND";
   const active = sheet.activeLoad;
   const busy = weighFirst.isPending || weighSecond.isPending;
-  const canWeigh = weightLbs != null && !busy;
+  const canWeigh = weightLbs != null && weightLbs > 0 && !busy;
 
   return (
     <Card className="gt-panel">
@@ -378,11 +378,16 @@ function WeighConsole({ sheet, weightLbs, onChanged }: WeighConsoleProps) {
               className="h-14 w-full bg-go text-lg font-bold hover:bg-go/90"
               disabled={!canWeigh}
               onClick={() => {
-                if (weightLbs == null) return;
+                if (weightLbs == null || weightLbs <= 0) return;
+                const truck = truckId.trim();
+                if (!truck) {
+                  toast.error("Enter a truck ID — tare memory and duplicate-truck checks key on it.");
+                  return;
+                }
                 weighFirst.mutate({
                   id: sheet.id,
                   weightLbs,
-                  truckId: truckId.trim() || undefined,
+                  truckId: truck,
                   driverName: driverName.trim() || undefined,
                   binId: chosenBinId,
                 });
@@ -401,7 +406,7 @@ function WeighConsole({ sheet, weightLbs, onChanged }: WeighConsoleProps) {
               className="h-14 w-full text-lg font-bold"
               disabled={!canWeigh}
               onClick={() => {
-                if (weightLbs == null) return;
+                if (weightLbs == null || weightLbs <= 0) return;
                 weighSecond.mutate({ id: sheet.id, weightLbs, binId: chosenBinId });
               }}
             >
@@ -409,11 +414,11 @@ function WeighConsole({ sheet, weightLbs, onChanged }: WeighConsoleProps) {
             </Button>
           </>
         )}
-        {weightLbs == null && (
+        {weightLbs == null || weightLbs <= 0 ? (
           <p className="font-mono text-[11px] text-muted-foreground">
             No weight on the scale — connect, start the simulator, or use manual entry.
           </p>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -515,7 +520,12 @@ export default function Scale() {
 
   const sheetQ = trpc.sheets.get.useQuery(
     { id: id ?? -1 },
-    { enabled: id != null, refetchInterval: 5_000 },
+    {
+      enabled: id != null,
+      // Refresh while weighing; a FULL/CLOSED/missing sheet is static.
+      refetchInterval: (query) =>
+        query.state.data?.sheet?.status === "OPEN" ? 5_000 : false,
+    },
   );
   const sheet = sheetQ.data?.sheet ?? null;
 
@@ -527,8 +537,11 @@ export default function Scale() {
     void utils.sheets.recentActivity.invalidate();
   };
 
-  // Live scale/simulator readings win over the manual override.
-  const effectiveLbs = scale.weightLbs ?? manualLbs;
+  // Live scale/simulator readings win over the manual override — but once
+  // the live source is gone, only the manual entry is trustworthy; a stale
+  // frozen reading must never silently override it.
+  const liveSource = scale.connected || scale.simulator.active;
+  const effectiveLbs = liveSource ? (scale.weightLbs ?? manualLbs) : manualLbs;
 
   return (
     <div className="space-y-4">

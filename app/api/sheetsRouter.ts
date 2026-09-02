@@ -11,7 +11,7 @@ import {
   sites,
   bins,
 } from "@db/schema";
-import { and, asc, desc, eq, gte, inArray, isNull, like, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, like, lte, or, sql } from "drizzle-orm";
 import { computeBushels, round2 } from "@contracts/grain";
 import { pushEod, getSetting } from "./officeSync";
 
@@ -34,6 +34,36 @@ function endOfDay(d: Date) {
   return x;
 }
 
+/**
+ * Parse a "YYYY-MM-DD" filter as local midnight. `new Date(str)` would parse
+ * it as UTC, so on any server behind UTC the operator's "Sep 1" report would
+ * silently aggregate Aug 31.
+ */
+function parseDay(s: string) {
+  const [y, m, d] = s.split("-").map(Number);
+  if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+    return new Date(y, m - 1, d);
+  }
+  return new Date(s);
+}
+
+/** An open transaction on the shared db handle. */
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/**
+ * Move bin inventory by a delta with one atomic SQL statement. The previous
+ * read-modify-write form lost updates whenever two weigh-outs (or a manual
+ * adjust) touched the same bin concurrently — a snapshot read inside the
+ * transaction does not lock the row on MySQL. GREATEST clamps at empty; the
+ * offline SQLite connection registers a GREATEST scalar to match.
+ */
+function applyToBin(tx: Tx, binId: number, deltaLbs: number) {
+  return tx
+    .update(bins)
+    .set({ currentLbs: sql`GREATEST(0, ${bins.currentLbs} + ${deltaLbs})` })
+    .where(eq(bins.id, binId));
+}
+
 /** Find a bin at the site for this crop with room for `needLbs`. */
 async function findBinFor(siteId: number, crop: string, needLbs: number) {
   const db = getDb();
@@ -45,14 +75,6 @@ async function findBinFor(siteId: number, crop: string, needLbs: number) {
   return (
     candidates.find((b) => b.capacityLbs - b.currentLbs >= needLbs) ?? candidates[0] ?? null
   );
-}
-
-async function applyToBin(binId: number, deltaLbs: number) {
-  const db = getDb();
-  const bin = await db.query.bins.findFirst({ where: eq(bins.id, binId) });
-  if (!bin) return;
-  const next = Math.max(0, bin.currentLbs + deltaLbs);
-  await db.update(bins).set({ currentLbs: next }).where(eq(bins.id, binId));
 }
 
 // --------------------------------------------------------------- joins
@@ -184,8 +206,8 @@ export const sheetsRouter = createRouter({
       if (input?.landlordId) conds.push(eq(weightSheets.landlordId, input.landlordId));
       if (input?.crop) conds.push(eq(weightSheets.crop, input.crop));
       if (input?.status) conds.push(eq(weightSheets.status, input.status));
-      if (input?.dateFrom) conds.push(gte(weightSheets.createdAt, startOfDay(new Date(input.dateFrom))));
-      if (input?.dateTo) conds.push(lte(weightSheets.createdAt, endOfDay(new Date(input.dateTo))));
+      if (input?.dateFrom) conds.push(gte(weightSheets.createdAt, startOfDay(parseDay(input.dateFrom))));
+      if (input?.dateTo) conds.push(lte(weightSheets.createdAt, endOfDay(parseDay(input.dateTo))));
 
       const rows = await joinSheetTables(db)
         .where(conds.length ? and(...conds) : undefined)
@@ -290,7 +312,7 @@ export const sheetsRouter = createRouter({
       z.object({
         id: z.number(),
         weightLbs: z.number().int().positive(),
-        truckId: z.string().optional(),
+        truckId: z.string().min(1, "A truck ID is required at weigh-in"),
         driverName: z.string().optional(),
         binId: z.number().nullable().optional(),
       }),
@@ -303,32 +325,43 @@ export const sheetsRouter = createRouter({
       if (s.status === "FULL")
         throw new Error(`Sheet is full (${s.maxLoads}/${s.maxLoads} loads) — open a new sheet for this lot`);
 
-      const existing = await db.select().from(loads).where(eq(loads.sheetId, input.id));
-      if (existing.some((l) => l.netLbs == null))
-        throw new Error("A load is still on the scale — weigh it out first");
-      if (existing.length >= s.maxLoads)
-        throw new Error(`Sheet already has ${s.maxLoads} loads — open a new sheet for this lot`);
+      if (input.binId != null) {
+        const bin = await db.query.bins.findFirst({ where: eq(bins.id, input.binId) });
+        if (!bin) throw new Error("Destination bin not found");
+        if (bin.siteId !== s.siteId) throw new Error("Destination bin belongs to another site");
+      }
 
-      const loadNo = Math.max(0, ...existing.map((l) => l.loadNo)) + 1;
       const isInbound = s.direction === "INBOUND";
-      const [{ id: loadId }] = await db
-        .insert(loads)
-        .values({
-          sheetId: input.id,
-          loadNo,
-          truckId: input.truckId || null,
-          driverName: input.driverName || null,
-          binId: input.binId ?? null,
-          ...(isInbound
-            ? { grossLbs: input.weightLbs, grossAt: new Date() }
-            : { tareLbs: input.weightLbs, tareAt: new Date() }),
-        })
-        .$returningId();
+      // Check + insert inside a transaction, backed by the unique
+      // (sheetId, loadNo) index: a double-click or a second terminal can no
+      // longer create two "on the scale" loads, which would strand one.
+      const { loadId, loadNo } = await db.transaction(async (tx) => {
+        const existing = await tx.select().from(loads).where(eq(loads.sheetId, input.id));
+        if (existing.some((l) => l.netLbs == null))
+          throw new Error("A load is still on the scale — weigh it out first");
+        if (existing.length >= s.maxLoads)
+          throw new Error(`Sheet already has ${s.maxLoads} loads — open a new sheet for this lot`);
+
+        const loadNo = Math.max(0, ...existing.map((l) => l.loadNo)) + 1;
+        const [{ id: loadId }] = await tx
+          .insert(loads)
+          .values({
+            sheetId: input.id,
+            loadNo,
+            truckId: input.truckId,
+            driverName: input.driverName || null,
+            binId: input.binId ?? null,
+            ...(isInbound
+              ? { grossLbs: input.weightLbs, grossAt: new Date() }
+              : { tareLbs: input.weightLbs, tareAt: new Date() }),
+          })
+          .$returningId();
+        return { loadId, loadNo };
+      });
       await logEvent(
         input.id,
         isInbound ? "WEIGH_IN" : "WEIGH_IN_EMPTY",
-        `Load ${loadNo} · ${input.weightLbs.toLocaleString()} lbs captured` +
-          (input.truckId ? ` · ${input.truckId}` : ""),
+        `Load ${loadNo} · ${input.weightLbs.toLocaleString()} lbs captured · ${input.truckId}`,
         loadId,
       );
       return { ok: true, loadId, loadNo };
@@ -359,6 +392,12 @@ export const sheetsRouter = createRouter({
       const netLbs = gross - tare;
       if (netLbs <= 0) throw new Error("Net weight must be positive — check scale readings");
 
+      if (input.binId != null) {
+        const picked = await db.query.bins.findFirst({ where: eq(bins.id, input.binId) });
+        if (!picked) throw new Error("Destination bin not found");
+        if (picked.siteId !== s.siteId) throw new Error("Destination bin belongs to another site");
+      }
+
       // bin: explicit pick now, else the pick made at weigh-in, else auto
       let binId = input.binId ?? load.binId;
       if (!binId) {
@@ -384,14 +423,10 @@ export const sheetsRouter = createRouter({
           )
           .where(eq(loads.id, load.id));
         if (binId) {
-          const bin = await tx.query.bins.findFirst({ where: eq(bins.id, binId) });
-          if (bin) {
-            const delta = isInbound ? netLbs : -netLbs;
-            await tx
-              .update(bins)
-              .set({ currentLbs: Math.max(0, bin.currentLbs + delta) })
-              .where(eq(bins.id, binId));
-          }
+          // Atomic delta — a plain read-then-write here loses the other
+          // truck's grain when two weigh-outs land on the same bin.
+          const delta = isInbound ? netLbs : -netLbs;
+          await applyToBin(tx, binId, delta);
         }
         // auto-close the sheet when the last slot fills
         const all = await tx.select().from(loads).where(eq(loads.sheetId, input.id));
@@ -447,24 +482,28 @@ export const sheetsRouter = createRouter({
         load.dockagePct,
       );
 
-      // Rebalance bin inventory if this load was already completed
-      if (load.netLbs != null && load.binId) {
-        const delta = netLbs - load.netLbs;
-        if (delta !== 0) await applyToBin(load.binId, s.direction === "INBOUND" ? delta : -delta);
-      }
+      // Rebalance bin inventory and rewrite the load in one transaction — a
+      // crash between the two would leave the bin diverged from the ledger.
+      await db.transaction(async (tx) => {
+        if (load.netLbs != null && load.binId) {
+          const delta = netLbs - load.netLbs;
+          if (delta !== 0)
+            await applyToBin(tx, load.binId, s.direction === "INBOUND" ? delta : -delta);
+        }
 
-      await db
-        .update(loads)
-        .set({
-          grossLbs: input.grossLbs,
-          tareLbs: input.tareLbs,
-          netLbs,
-          grossBushels,
-          shrinkPct,
-          netBushels,
-          changeReason: input.changeReason,
-        })
-        .where(eq(loads.id, input.loadId));
+        await tx
+          .update(loads)
+          .set({
+            grossLbs: input.grossLbs,
+            tareLbs: input.tareLbs,
+            netLbs,
+            grossBushels,
+            shrinkPct,
+            netBushels,
+            changeReason: input.changeReason,
+          })
+          .where(eq(loads.id, input.loadId));
+      });
       await logEvent(
         load.sheetId,
         "WEIGHT_EDIT",
@@ -518,18 +557,26 @@ export const sheetsRouter = createRouter({
       const s = await db.query.weightSheets.findFirst({ where: eq(weightSheets.id, load.sheetId) });
       if (!s) throw new Error("Sheet not found");
       if (s.status === "CLOSED") throw new Error("Sheet is closed for the day");
-      if (load.netLbs != null) {
-        const delta = s.direction === "INBOUND" ? load.netLbs : -load.netLbs;
-        if (load.binId) await applyToBin(load.binId, -delta);
-        if (input.binId) await applyToBin(input.binId, delta);
+      if (input.binId != null) {
+        const bin = await db.query.bins.findFirst({ where: eq(bins.id, input.binId) });
+        if (!bin) throw new Error("Bin not found");
+        if (bin.siteId !== s.siteId) throw new Error("Bin belongs to another site");
       }
-      await db.update(loads).set({ binId: input.binId }).where(eq(loads.id, input.loadId));
+      await db.transaction(async (tx) => {
+        if (load.netLbs != null) {
+          const delta = s.direction === "INBOUND" ? load.netLbs : -load.netLbs;
+          if (load.binId) await applyToBin(tx, load.binId, -delta);
+          if (input.binId) await applyToBin(tx, input.binId, delta);
+        }
+        await tx.update(loads).set({ binId: input.binId }).where(eq(loads.id, input.loadId));
+      });
       await logEvent(load.sheetId, "BIN_ASSIGN", `Load ${load.loadNo} → bin ${input.binId ?? "none"}`, load.id);
       return { ok: true };
     }),
 
   // Delete a mistaken load (sheet not closed). Reverses bin movement and
-  // re-opens a full sheet.
+  // re-opens a full sheet. The load's audit events are kept — the VOID entry
+  // below records why the load disappeared from the ledger.
   voidLoad: publicQuery.input(z.object({ loadId: z.number() })).mutation(async ({ input }) => {
     const db = getDb();
     const load = await db.query.loads.findFirst({ where: eq(loads.id, input.loadId) });
@@ -537,18 +584,23 @@ export const sheetsRouter = createRouter({
     const s = await db.query.weightSheets.findFirst({ where: eq(weightSheets.id, load.sheetId) });
     if (!s) throw new Error("Sheet not found");
     if (s.status === "CLOSED") throw new Error("Closed sheets cannot be edited");
-    if (load.netLbs != null && load.binId) {
-      await applyToBin(load.binId, s.direction === "INBOUND" ? -load.netLbs : load.netLbs);
-    }
-    await db.delete(sheetEvents).where(eq(sheetEvents.loadId, input.loadId));
-    await db.delete(loads).where(eq(loads.id, input.loadId));
-    if (s.status === "FULL") {
-      await db
-        .update(weightSheets)
-        .set({ status: "OPEN", closeReason: null, closedAt: null })
-        .where(eq(weightSheets.id, s.id));
-    }
-    await logEvent(s.id, "LOAD_VOID", `Load ${load.loadNo} voided`);
+    await db.transaction(async (tx) => {
+      if (load.netLbs != null && load.binId) {
+        await applyToBin(tx, load.binId, s.direction === "INBOUND" ? -load.netLbs : load.netLbs);
+      }
+      await tx.delete(loads).where(eq(loads.id, input.loadId));
+      if (s.status === "FULL") {
+        await tx
+          .update(weightSheets)
+          .set({ status: "OPEN", closeReason: null, closedAt: null })
+          .where(eq(weightSheets.id, s.id));
+      }
+    });
+    await logEvent(
+      s.id,
+      "LOAD_VOID",
+      `Load ${load.loadNo} voided${load.truckId ? ` (${load.truckId})` : ""}`,
+    );
     return { ok: true };
   }),
 
@@ -626,6 +678,8 @@ export const sheetsRouter = createRouter({
   // ------------------------------------------------------- end of day
   // Any sheet still open at close of day is closed (FULL sheets are already
   // closed). Lots stay open — a fresh sheet can be started tomorrow.
+  // Refused while any truck is still mid-weigh: a CLOSED sheet can no longer
+  // be weighed out or voided, so that load would be stranded for good.
   closeDay: publicQuery
     .input(z.object({ siteId: z.number().optional() }).optional())
     .mutation(async ({ input }) => {
@@ -636,6 +690,17 @@ export const sheetsRouter = createRouter({
       const open = await db.select({ id: weightSheets.id }).from(weightSheets).where(openWhere);
     if (open.length === 0) return { closed: 0, office: null };
     const ids = open.map((r) => r.id);
+    const inFlight = await db
+      .select({ ticketNo: weightSheets.ticketNo, loadNo: loads.loadNo })
+      .from(loads)
+      .innerJoin(weightSheets, eq(loads.sheetId, weightSheets.id))
+      .where(and(inArray(loads.sheetId, ids), isNull(loads.netLbs)));
+    if (inFlight.length > 0) {
+      const detail = inFlight.map((l) => `${l.ticketNo} load ${l.loadNo}`).join(", ");
+      throw new Error(
+        `Trucks still mid-weigh (${detail}) — finish or void those loads before closing the day`,
+      );
+    }
     await db
       .update(weightSheets)
       .set({ status: "CLOSED", closeReason: "EOD", closedAt: new Date() })
@@ -653,7 +718,7 @@ export const sheetsRouter = createRouter({
     .input(z.object({ date: z.string().optional(), siteId: z.number().optional() }).optional())
     .query(async ({ input }) => {
       const db = getDb();
-      const day = input?.date ? new Date(input.date) : new Date();
+      const day = input?.date ? parseDay(input.date) : new Date();
       const from = startOfDay(day);
       const to = endOfDay(day);
 

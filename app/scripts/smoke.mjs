@@ -7,7 +7,10 @@ import superjson from "superjson";
 
 const client = createTRPCClient({
   links: [
-    httpBatchLink({ url: "http://localhost:3000/api/trpc", transformer: superjson }),
+    httpBatchLink({
+      url: `http://localhost:${process.env.SMOKE_PORT || 3000}/api/trpc`,
+      transformer: superjson,
+    }),
   ],
 });
 
@@ -162,6 +165,21 @@ check("dailyReport crop breakdown", report.byCrop.some((c) => c.crop === crop));
 check("dailyReport bin levels", report.bins.length === binsBefore.length);
 
 // 12. close day locks completed sheets -----------------------------------------
+// The demo seed deliberately leaves one truck mid-weigh; closeDay refuses
+// while any load is on the scale, so void it first (extra void coverage).
+let closeBlocked = false;
+try {
+  await client.sheets.closeDay.mutate();
+} catch (e) {
+  closeBlocked = String(e?.message ?? e).includes("mid-weigh");
+}
+check("closeDay refuses while a truck is mid-weigh", closeBlocked);
+const openSheets = await client.sheets.open.query();
+const stranded = openSheets.filter((s) => s.activeLoad != null);
+for (const s of stranded) {
+  await client.sheets.voidLoad.mutate({ loadId: s.activeLoad.id });
+}
+check("in-flight loads voided before close", stranded.length >= 1, `${stranded.length} voided`);
 const closed = await client.sheets.closeDay.mutate();
 check("closeDay locks completed sheets", closed.closed >= 1, `${closed.closed} closed`);
 got = await client.sheets.get.query({ id: created.id });

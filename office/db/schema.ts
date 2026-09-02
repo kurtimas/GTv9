@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,8 @@ export const loads = mysqlTable(
     sheetIdx: index("loads_sheet_idx").on(t.sheetId),
     truckIdx: index("loads_truck_idx").on(t.truckId),
     createdIdx: index("loads_created_idx").on(t.createdAt),
+    // Backs the weigh-in race guard: two terminals can't both start load N.
+    sheetLoadUnique: uniqueIndex("loads_sheet_load_unique").on(t.sheetId, t.loadNo),
   }),
 );
 

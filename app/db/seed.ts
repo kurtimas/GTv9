@@ -52,8 +52,12 @@ type SheetDef = {
 /** Seed demo data only when the database is empty. Safe to call on every boot. */
 export async function seedIfEmpty() {
   const db = getDb();
-  const existing = await db.select({ id: farmers.id }).from(farmers).limit(1);
-  if (existing.length > 0) return false;
+  // Probe several tables: a partially-cleaned database (e.g. farmers wiped but
+  // sheets kept) is NOT empty and must never be re-seeded over.
+  const hasFarmers = await db.select({ id: farmers.id }).from(farmers).limit(1);
+  const hasSheets = await db.select({ id: weightSheets.id }).from(weightSheets).limit(1);
+  const hasLots = await db.select({ id: lots.id }).from(lots).limit(1);
+  if (hasFarmers.length > 0 || hasSheets.length > 0 || hasLots.length > 0) return false;
 
   console.log("[seed] Empty database — loading demo dataset...");
 

@@ -7,7 +7,10 @@ import superjson from "superjson";
 
 const client = createTRPCClient({
   links: [
-    httpBatchLink({ url: "http://localhost:3000/api/trpc", transformer: superjson }),
+    httpBatchLink({
+      url: `http://localhost:${process.env.SMOKE_PORT || 3000}/api/trpc`,
+      transformer: superjson,
+    }),
   ],
 });
 
@@ -61,13 +64,14 @@ const openQueue = await client.sheets.open.query();
 check("sheets.open lists new sheet", openQueue.some((s) => s.id === created.id));
 
 // 4. weigh flow: 81,250 gross − 29,500 tare = 51,750 net ------------------
-await client.sheets.weighFirst.mutate({ id: created.id, weightLbs: 81250 });
+await client.sheets.weighFirst.mutate({ id: created.id, weightLbs: 81250, truckId: "SMOKE-01", driverName: "Smoke Test" });
 const weighed = await client.sheets.weighSecond.mutate({ id: created.id, weightLbs: 29500 });
 check("weighSecond net lbs", weighed.netLbs === 51750, `net=${weighed.netLbs}`);
 
 // 5. bin auto-assignment + inventory movement -----------------------------
 let got = await client.sheets.get.query({ id: created.id });
-const binId = got.sheet.binId;
+const binId = got.sheet.loads?.at(-1)?.binId ?? null; // bin assignment lives on the load, not the sheet
+const loadId = got.sheet.loads?.at(-1)?.id;
 const crop = got.sheet.crop;
 const expectedBin = binsBefore
   .filter((b) => b.siteId === sites[0].id && b.crop === crop)
@@ -84,23 +88,25 @@ if (expectedBin) {
 
 // 6. grading + shrink math -------------------------------------------------
 const bw = { Corn: 56, Wheat: 60, Soybeans: 60, Sorghum: 56, Barley: 48, Oats: 32, Canola: 50, Sunflowers: 25 }[crop] ?? 60;
-const graded = await client.sheets.updateGrades.mutate({
-  id: created.id,
+const graded = await client.sheets.updateLoadGrades.mutate({
+  loadId,
   moisturePct: 16.3,
   dockagePct: 2,
   testWeightLbs: 56,
+  proteinPct: null,
 });
 check("grades return recalculated bushels", graded.grossBushels != null);
 got = await client.sheets.get.query({ id: created.id });
+const smokeLoad = got.sheet.loads.find((l) => l.id === loadId);
 check(
   "shrink % = moisture over base + dockage",
-  got.sheet.shrinkPct != null && got.sheet.shrinkPct > 2,
-  `shrink=${got.sheet.shrinkPct}%`,
+  smokeLoad.shrinkPct != null && smokeLoad.shrinkPct > 2,
+  `shrink=${smokeLoad.shrinkPct}%`,
 );
 check(
   "netBushels = gross × (1 − shrink)",
-  round2((51750 / bw) * (1 - got.sheet.shrinkPct / 100)) === got.sheet.netBushels,
-  `${got.sheet.netBushels} bu @ ${bw} lbs/bu`,
+  round2((51750 / bw) * (1 - smokeLoad.shrinkPct / 100)) === smokeLoad.netBushels,
+  `${smokeLoad.netBushels} bu @ ${bw} lbs/bu`,
 );
 
 // 7. lot split join (regression: lotSplitPct was never selected) -----------
@@ -115,8 +121,8 @@ if (splitLot) {
 }
 
 // 8. weight correction with reason + bin rebalance --------------------------
-const corrected = await client.sheets.updateWeights.mutate({
-  id: created.id,
+const corrected = await client.sheets.updateLoadWeights.mutate({
+  loadId,
   grossLbs: 81250,
   tareLbs: 30000,
   changeReason: "smoke test correction",
@@ -129,8 +135,8 @@ if (binId) {
   check("bin rebalanced after correction", level - before === 51250, `delta=${level - before}`);
 }
 // restore original weights before close
-await client.sheets.updateWeights.mutate({
-  id: created.id,
+await client.sheets.updateLoadWeights.mutate({
+  loadId,
   grossLbs: 81250,
   tareLbs: 29500,
   changeReason: "smoke test restore",
@@ -153,20 +159,35 @@ check("archive filter by farmer", byFarmer.some((s) => s.id === created.id));
 
 // 11. daily report -------------------------------------------------------------
 const report = await client.sheets.dailyReport.query();
-check("dailyReport includes the load", report.sheets.some((s) => s.id === created.id));
+check("dailyReport includes the load", report.loads.some((l) => l.sheetId === created.id));
 check("dailyReport totals consistent", report.inboundLbs >= 51750, `in=${report.inboundLbs} lbs`);
 check("dailyReport crop breakdown", report.byCrop.some((c) => c.crop === crop));
 check("dailyReport bin levels", report.bins.length === binsBefore.length);
 
 // 12. close day locks completed sheets -----------------------------------------
+// The demo seed deliberately leaves one truck mid-weigh; closeDay refuses
+// while any load is on the scale, so void it first (extra void coverage).
+let closeBlocked = false;
+try {
+  await client.sheets.closeDay.mutate();
+} catch (e) {
+  closeBlocked = String(e?.message ?? e).includes("mid-weigh");
+}
+check("closeDay refuses while a truck is mid-weigh", closeBlocked);
+const openSheets = await client.sheets.open.query();
+const stranded = openSheets.filter((s) => s.activeLoad != null);
+for (const s of stranded) {
+  await client.sheets.voidLoad.mutate({ loadId: s.activeLoad.id });
+}
+check("in-flight loads voided before close", stranded.length >= 1, `${stranded.length} voided`);
 const closed = await client.sheets.closeDay.mutate();
 check("closeDay locks completed sheets", closed.closed >= 1, `${closed.closed} closed`);
 got = await client.sheets.get.query({ id: created.id });
 check("sheet status CLOSED after close-day", got.sheet.status === "CLOSED");
 let editBlocked = false;
 try {
-  await client.sheets.updateWeights.mutate({
-    id: created.id, grossLbs: 80000, tareLbs: 29000, changeReason: "should fail",
+  await client.sheets.updateLoadWeights.mutate({
+    loadId, grossLbs: 80000, tareLbs: 29000, changeReason: "should fail",
   });
 } catch {
   editBlocked = true;
@@ -176,19 +197,22 @@ check("closed sheet rejects edits", editBlocked);
 // 13. void guard on closed sheets -----------------------------------------------
 let voidBlocked = false;
 try {
-  await client.sheets.void.mutate({ id: created.id });
+  await client.sheets.voidLoad.mutate({ loadId });
 } catch {
   voidBlocked = true;
 }
 check("closed sheet cannot be voided", voidBlocked);
 
-// 14. void a fresh open sheet reverses nothing & deletes --------------------------
+// 14. void removes a mid-weigh load from an open sheet ------------------------------
 const tmp = await client.sheets.create.mutate({
-  siteId: sites[0].id, farmerId: farmer.id, lotId: null, crop: "Corn", direction: "INBOUND",
+  siteId: sites[0].id, farmerId: farmer.id, lotId: lot?.id ?? null, crop: lot?.crop ?? "Corn", direction: "OUTBOUND",
 });
-await client.sheets.void.mutate({ id: tmp.id });
-const gone = await client.sheets.list.query({ search: tmp.ticketNo });
-check("void deletes open sheet", !gone.some((s) => s.id === tmp.id));
+await client.sheets.weighFirst.mutate({ id: tmp.id, weightLbs: 30000, truckId: "SMOKE-02" });
+const tmpSheet = await client.sheets.get.query({ id: tmp.id });
+const tmpLoadId = tmpSheet.sheet.loads.at(-1)?.id;
+await client.sheets.voidLoad.mutate({ loadId: tmpLoadId });
+const afterVoid = await client.sheets.get.query({ id: tmp.id });
+check("void removes the in-progress load", afterVoid.sheet.loads.length === 0);
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

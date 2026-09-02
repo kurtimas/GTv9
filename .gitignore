@@ -1,0 +1,20 @@
+# Dependencies / build output
+node_modules/
+dist/
+data/
+
+# Local databases and secrets
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+
+# Agent session artifacts
+.zcode/
+
+# Historical zip archives — kept locally, not in the repo
+# (they contain real operational data and a retired password)
+GTv8Beta.zip
+GTv8Beta-update.zip
+grain-track-ubuntu-bootstrap.zip

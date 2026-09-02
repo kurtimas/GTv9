@@ -3,79 +3,86 @@
 @tailwind utilities;
 
 @layer base {
-  /* ---- Console (dark) — default ------------------------------------
-     Operations-console palette: near-black ground, hairline borders,
-     amber signal color, cyan for live telemetry, phosphor green for go. */
+  /* ---- Harvest Modern (light) — default --------------------------------
+     Field-day palette: deep forest green + wheat gold + cream. Cream page
+     ground, white ivory cards, deep forest-green text and primary actions,
+     wheat gold as the capture/capture-button instrument color, green for
+     stable/positive, amber for live telemetry, red for critical. The
+     sidebar is deepest forest in every mode; readout surfaces are inset
+     dark-forest "instrument" panels in every mode. */
   :root {
-    --background: 222 47% 4%;
-    --foreground: 195 15% 90%;
-    --card: 219 39% 8%;
-    --card-foreground: 195 15% 90%;
-    --popover: 219 39% 9%;
-    --popover-foreground: 195 15% 90%;
-    --primary: 43 96% 56%;
-    --primary-foreground: 30 70% 8%;
-    --secondary: 220 30% 14%;
-    --secondary-foreground: 195 15% 88%;
-    --muted: 220 30% 13%;
-    --muted-foreground: 217 14% 58%;
-    --accent: 220 32% 16%;
-    --accent-foreground: 195 15% 92%;
-    --destructive: 0 84% 65%;
+    --background: 42 38% 94%; /* light cream */
+    --foreground: 160 20% 12%; /* dark forest ink */
+    --card: 0 0% 100%;
+    --card-foreground: 160 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 20% 12%;
+    --primary: 160 38% 18%; /* deep forest green */
+    --primary-foreground: 42 38% 94%; /* cream */
+    --secondary: 42 30% 90%;
+    --secondary-foreground: 160 20% 12%;
+    --muted: 42 20% 88%;
+    --muted-foreground: 160 10% 40%;
+    --accent: 42 96% 58%; /* wheat gold */
+    --accent-foreground: 160 38% 12%;
+    --destructive: 0 84% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 40% 17%;
-    --input: 220 40% 22%;
-    --ring: 43 96% 56%;
-    --radius: 0.375rem;
-    --sidebar-background: 220 45% 5%;
-    --sidebar-foreground: 195 15% 88%;
-    --sidebar-primary: 43 96% 56%;
-    --sidebar-primary-foreground: 30 70% 8%;
-    --sidebar-accent: 220 32% 14%;
-    --sidebar-accent-foreground: 195 15% 92%;
-    --sidebar-border: 220 40% 15%;
-    --sidebar-ring: 43 96% 56%;
-    /* console signal tokens */
-    --live: 187 92% 55%; /* cyan — live telemetry */
-    --go: 158 64% 52%; /* phosphor green — capture / positive */
-    --crit: 0 91% 68%; /* signal red — overdue / critical */
-    --readout: 222 60% 3%; /* inset readout ground */
+    --border: 42 20% 85%;
+    --input: 42 20% 80%;
+    --ring: 160 38% 18%;
+    --radius: 0.75rem;
+    --sidebar-background: 160 38% 12%; /* deepest forest */
+    --sidebar-foreground: 42 30% 90%;
+    --sidebar-primary: 42 96% 58%; /* wheat gold */
+    --sidebar-primary-foreground: 160 38% 12%;
+    --sidebar-accent: 160 30% 18%;
+    --sidebar-accent-foreground: 42 30% 96%;
+    --sidebar-border: 160 20% 20%;
+    --sidebar-ring: 42 96% 58%;
+    /* instrument signal tokens */
+    --stable: 142 45% 36%; /* field green — stable / positive / complete */
+    --live: 38 92% 42%; /* amber — moving telemetry / on scale */
+    --go: 42 96% 52%; /* wheat gold — capture (WEIGH buttons) / attention */
+    --crit: 0 84% 45%; /* red — overdue / critical / offline */
+    --readout: 160 38% 8%; /* inset forest instrument ground */
   }
 
-  /* ---- Daylight mode ----------------------------------------------
-     Same structure, warm paper ground for office / daylight use. */
-  .day {
-    --background: 40 33% 94%;
-    --foreground: 30 22% 12%;
-    --card: 40 30% 99%;
-    --card-foreground: 30 22% 12%;
-    --popover: 40 30% 99%;
-    --popover-foreground: 30 22% 12%;
-    --primary: 36 92% 40%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 38 25% 90%;
-    --secondary-foreground: 30 22% 15%;
-    --muted: 38 22% 91%;
-    --muted-foreground: 30 10% 40%;
-    --accent: 38 28% 88%;
-    --accent-foreground: 30 22% 15%;
-    --destructive: 0 72% 45%;
+  /* ---- Night mode ------------------------------------------------------
+     Forest-dark console for the night shift: near-black green ground,
+     forest cards, gold signals, same green/amber/red semantics. */
+  .night {
+    --background: 160 22% 7%;
+    --foreground: 42 25% 90%;
+    --card: 160 18% 10%;
+    --card-foreground: 42 25% 90%;
+    --popover: 160 18% 11%;
+    --popover-foreground: 42 25% 90%;
+    --primary: 152 32% 40%; /* lit forest green */
+    --primary-foreground: 42 38% 94%;
+    --secondary: 160 12% 16%;
+    --secondary-foreground: 42 20% 88%;
+    --muted: 160 12% 14%;
+    --muted-foreground: 42 12% 62%;
+    --accent: 42 96% 58%;
+    --accent-foreground: 160 38% 10%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 35 18% 80%;
-    --input: 35 18% 74%;
-    --ring: 36 92% 40%;
-    --sidebar-background: 220 45% 6%;
-    --sidebar-foreground: 195 15% 88%;
-    --sidebar-primary: 43 96% 56%;
-    --sidebar-primary-foreground: 30 70% 8%;
-    --sidebar-accent: 220 32% 14%;
-    --sidebar-accent-foreground: 195 15% 92%;
-    --sidebar-border: 220 40% 15%;
-    --sidebar-ring: 43 96% 56%;
-    --live: 187 85% 30%;
-    --go: 158 75% 30%;
-    --crit: 0 72% 45%;
-    --readout: 40 30% 97%;
+    --border: 160 12% 20%;
+    --input: 160 12% 24%;
+    --ring: 42 96% 58%;
+    --sidebar-background: 160 30% 9%;
+    --sidebar-foreground: 42 25% 88%;
+    --sidebar-primary: 42 96% 58%;
+    --sidebar-primary-foreground: 160 38% 10%;
+    --sidebar-accent: 160 20% 16%;
+    --sidebar-accent-foreground: 42 30% 94%;
+    --sidebar-border: 160 15% 18%;
+    --sidebar-ring: 42 96% 58%;
+    --stable: 142 48% 52%;
+    --live: 42 96% 62%;
+    --go: 42 96% 58%;
+    --crit: 0 85% 60%;
+    --readout: 160 32% 5%;
   }
 }
 
@@ -84,10 +91,10 @@
     @apply border-border;
   }
   html {
-    color-scheme: dark;
-  }
-  html.day {
     color-scheme: light;
+  }
+  html.night {
+    color-scheme: dark;
   }
   body {
     @apply bg-background text-foreground;
@@ -100,8 +107,8 @@
     font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   ::selection {
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
+    background: hsl(var(--go));
+    color: hsl(160 38% 10%);
   }
   /* thin console scrollbar */
   ::-webkit-scrollbar {
@@ -116,7 +123,7 @@
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.6);
+    background: hsl(var(--go) / 0.65);
   }
   * {
     scrollbar-width: thin;
@@ -126,18 +133,121 @@
     outline: none;
     box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring));
   }
+  /* ambient field-day wash — faint wheat sunlight from the top */
+  body {
+    background-image: radial-gradient(
+      1200px 520px at 50% -10%,
+      hsl(42 60% 70% / 0.14),
+      transparent 65%
+    );
+    background-attachment: fixed;
+  }
+  /* night: faint forest + gold instrument glow instead */
+  html.night body {
+    background-image: radial-gradient(
+        1100px 480px at 14% -8%,
+        hsl(152 40% 40% / 0.09),
+        transparent 62%
+      ),
+      radial-gradient(950px 420px at 88% -8%, hsl(42 96% 58% / 0.05), transparent 60%);
+    background-attachment: fixed;
+  }
 }
 
 @layer components {
-  /* hairline console panel */
+  /* ivory field panel — soft warm shadow */
   .gt-panel {
-    @apply rounded-md border border-border bg-card;
+    @apply rounded-lg border border-border bg-card;
+    box-shadow: 0 4px 20px -2px hsl(42 30% 30% / 0.1);
+  }
+  html.night .gt-panel {
+    box-shadow:
+      inset 0 1px 0 hsl(42 30% 85% / 0.05),
+      0 2px 10px hsl(160 30% 2% / 0.5);
+  }
+  /* wheat-gold brand wordmark */
+  .gt-brand {
+    background: linear-gradient(
+      115deg,
+      hsl(46 96% 64%),
+      hsl(40 92% 54%) 55%,
+      hsl(36 88% 46%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* wheat-gold capture buttons (WEIGH IN / OUT) — gold body, forest-ink text */
+  button.bg-go {
+    background-color: hsl(42 96% 52%);
+    background-image: linear-gradient(
+      180deg,
+      hsl(48 100% 70% / 0.45),
+      hsl(42 96% 52% / 0.08) 52%,
+      hsl(34 90% 34% / 0.22)
+    );
+    color: hsl(160 38% 10%);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.35),
+      0 4px 14px 0 hsl(42 96% 50% / 0.35);
+  }
+  button.bg-go:hover {
+    background-color: hsl(40 94% 48%);
+    background-image: linear-gradient(
+      180deg,
+      hsl(48 100% 70% / 0.35),
+      hsl(42 96% 52% / 0.06) 52%,
+      hsl(34 90% 34% / 0.26)
+    );
+  }
+  button.bg-go:disabled {
+    background-image: none;
+    color: hsl(var(--muted-foreground));
+    box-shadow: none;
+  }
+  /* subtle forest gloss on primary action buttons (night only) */
+  html.night button.bg-primary {
+    background-image: linear-gradient(
+      180deg,
+      hsl(0 0% 100% / 0.14),
+      hsl(0 0% 0% / 0.08) 55%,
+      hsl(160 50% 12% / 0.4)
+    );
+    box-shadow: 0 6px 18px hsl(152 40% 40% / 0.25);
+  }
+  html.night button.bg-primary:disabled {
+    background-image: none;
+    box-shadow: none;
+  }
+  /* glowing readout digits on the dark instrument surface (both modes) */
+  .gt-scan .text-go,
+  .bg-readout .text-go {
+    text-shadow:
+      0 0 10px hsl(42 96% 58% / 0.55),
+      0 0 30px hsl(42 96% 58% / 0.25);
+  }
+  .gt-scan .text-live,
+  .bg-readout .text-live {
+    text-shadow:
+      0 0 10px hsl(42 96% 62% / 0.5),
+      0 0 30px hsl(42 96% 62% / 0.22);
+  }
+  .gt-scan .text-stable,
+  .bg-readout .text-stable {
+    text-shadow:
+      0 0 10px hsl(142 48% 52% / 0.55),
+      0 0 30px hsl(142 48% 52% / 0.25);
   }
   /* mono eyebrow label — uppercase, wide tracking */
   .gt-eyebrow {
     font-family: "JetBrains Mono", ui-monospace, monospace;
     @apply text-[10px] font-semibold uppercase text-muted-foreground;
     letter-spacing: 0.18em;
+  }
+  /* eyebrows sit on the dark readout surface too — keep them readable there */
+  .gt-scan .gt-eyebrow,
+  .bg-readout .gt-eyebrow {
+    color: hsl(var(--sidebar-foreground) / 0.65);
   }
   /* glowing status LED */
   .gt-led {
@@ -148,18 +258,18 @@
     background: hsl(var(--muted-foreground) / 0.5);
   }
   .gt-led-on {
+    background: hsl(var(--stable));
+    box-shadow: 0 0 6px hsl(var(--stable) / 0.9), 0 0 14px hsl(var(--stable) / 0.45);
+    animation: gt-pulse 1.5s ease-in-out infinite;
+  }
+  .gt-led-live {
     background: hsl(var(--go));
     box-shadow: 0 0 6px hsl(var(--go) / 0.9), 0 0 14px hsl(var(--go) / 0.45);
     animation: gt-pulse 1.5s ease-in-out infinite;
   }
-  .gt-led-live {
+  .gt-led-warn {
     background: hsl(var(--live));
     box-shadow: 0 0 6px hsl(var(--live) / 0.9), 0 0 14px hsl(var(--live) / 0.45);
-    animation: gt-pulse 1.5s ease-in-out infinite;
-  }
-  .gt-led-warn {
-    background: hsl(var(--primary));
-    box-shadow: 0 0 6px hsl(var(--primary) / 0.9), 0 0 14px hsl(var(--primary) / 0.45);
     animation: gt-pulse 1.5s ease-in-out infinite;
   }
   .gt-led-crit {
@@ -180,17 +290,8 @@
     pointer-events: none;
     background: repeating-linear-gradient(
       0deg,
-      hsl(0 0% 100% / 0.028) 0px,
-      hsl(0 0% 100% / 0.028) 1px,
-      transparent 1px,
-      transparent 3px
-    );
-  }
-  .day .gt-scan::after {
-    background: repeating-linear-gradient(
-      0deg,
-      hsl(220 40% 20% / 0.035) 0px,
-      hsl(220 40% 20% / 0.035) 1px,
+      hsl(0 0% 100% / 0.03) 0px,
+      hsl(0 0% 100% / 0.03) 1px,
       transparent 1px,
       transparent 3px
     );
@@ -209,7 +310,7 @@
   .gt-ticker:hover .gt-ticker-track {
     animation-play-state: paused;
   }
-  /* radar sweep (logo / live indicator) */
+  /* radar sweep (logo / live indicator) — gold */
   .gt-radar {
     position: relative;
     overflow: hidden;
@@ -222,8 +323,8 @@
     border-radius: inherit;
     background: conic-gradient(
       from 0deg,
-      hsl(var(--primary) / 0.85),
-      hsl(var(--primary) / 0.15) 70deg,
+      hsl(var(--sidebar-primary) / 0.85),
+      hsl(var(--sidebar-primary) / 0.15) 70deg,
       transparent 110deg
     );
     animation: gt-sweep 4.2s linear infinite;
@@ -316,7 +417,7 @@
     color: #000;
   }
 }
-/* console-dark ticket: invert back to paper for on-screen proofing */
-html:not(.day) #ticket-print {
+/* night ticket: invert back to paper for on-screen proofing */
+html.night #ticket-print {
   filter: invert(1) hue-rotate(180deg);
 }

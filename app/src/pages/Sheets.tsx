@@ -940,9 +940,15 @@ function WeightsDialog({
 
   const grossN = parseNum(gross);
   const tareN = parseNum(tare);
+  const netPreview = grossN != null && tareN != null ? grossN - tareN : null;
   const valid =
-    grossN != null && grossN > 0 && tareN != null && tareN > 0 && reason.trim().length >= 3;
-  const netPreview = grossN != null && tareN != null ? Math.abs(grossN - tareN) : null;
+    grossN != null &&
+    grossN > 0 &&
+    tareN != null &&
+    tareN > 0 &&
+    netPreview != null &&
+    netPreview > 0 &&
+    reason.trim().length >= 3;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -981,11 +987,17 @@ function WeightsDialog({
             />
           </div>
         </div>
-        {netPreview != null && (
+        {netPreview != null && netPreview > 0 && (
           <div className="flex justify-between rounded-md border border-border bg-readout px-3 py-2 font-mono text-xs text-sidebar-foreground">
             <span className="text-sidebar-foreground/60">New net</span>
             <span className="font-semibold">{fmtLbs(netPreview)} lbs</span>
           </div>
+        )}
+        {netPreview != null && netPreview <= 0 && (
+          <p className="font-mono text-[10px] text-crit">
+            Net must be positive — gross has to exceed tare (the server will
+            refuse the correction).
+          </p>
         )}
         <div className="space-y-1">
           <Label htmlFor="w-reason" className="text-xs">

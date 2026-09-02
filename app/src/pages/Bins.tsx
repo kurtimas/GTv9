@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AdminPasswordField } from "@/components/AdminPasswordField";
 import {
   CROPS,
   bushelWeight,
@@ -175,6 +176,7 @@ function AddBinDialog({
   const [name, setName] = useState("");
   const [crop, setCrop] = useState<Crop>("Corn");
   const capacity = useCapacityConverter(crop);
+  const [adminPassword, setAdminPassword] = useState("");
 
   const createBin = trpc.core.bins.create.useMutation({
     onSuccess: async () => {
@@ -202,7 +204,12 @@ function AddBinDialog({
       toast.error("Enter a valid capacity");
       return;
     }
+    if (!adminPassword) {
+      toast.error("Admin password is required to add a bin");
+      return;
+    }
     createBin.mutate({
+      adminPassword,
       siteId: siteIdNum,
       name: name.trim(),
       crop,
@@ -268,6 +275,12 @@ function AddBinDialog({
             </div>
           </div>
           <CapacityFields converter={capacity} />
+          <AdminPasswordField
+            id="add-bin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Adding a bin requires the site admin password."
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -298,6 +311,7 @@ function EditBinDialog({
     (CROPS as readonly string[]).includes(bin.crop) ? (bin.crop as Crop) : "Corn",
   );
   const capacity = useCapacityConverter(crop, bin.capacityLbs);
+  const [adminPassword, setAdminPassword] = useState("");
 
   const updateBin = trpc.core.bins.update.useMutation({
     onSuccess: async () => {
@@ -317,7 +331,12 @@ function EditBinDialog({
       toast.error("Enter a valid capacity");
       return;
     }
+    if (!adminPassword) {
+      toast.error("Admin password is required to edit a bin");
+      return;
+    }
     updateBin.mutate({
+      adminPassword,
       id: bin.id,
       name: name.trim(),
       crop,
@@ -377,6 +396,12 @@ function EditBinDialog({
                 : ""}
             </p>
           )}
+          <AdminPasswordField
+            id="edit-bin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Editing a bin requires the site admin password."
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -400,6 +425,7 @@ function AdjustLevelDialog({
 }) {
   const utils = trpc.useUtils();
   const [value, setValue] = useState(String(bin.currentLbs));
+  const [adminPassword, setAdminPassword] = useState("");
 
   const adjust = trpc.core.bins.adjust.useMutation({
     onSuccess: async () => {
@@ -416,7 +442,11 @@ function AdjustLevelDialog({
       toast.error("Enter a valid non-negative level in lbs");
       return;
     }
-    adjust.mutate({ id: bin.id, currentLbs: Math.round(n) });
+    if (!adminPassword) {
+      toast.error("Admin password is required to adjust a bin level");
+      return;
+    }
+    adjust.mutate({ adminPassword, id: bin.id, currentLbs: Math.round(n) });
   };
 
   return (
@@ -443,6 +473,12 @@ function AdjustLevelDialog({
           <p className="font-mono text-xs text-muted-foreground">
             Capacity: {fmtLbs(bin.capacityLbs)} lb
           </p>
+          <AdminPasswordField
+            id="adjust-bin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Level corrections move inventory — they require the site admin password."
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -465,6 +501,7 @@ function DeleteBinDialog({
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
+  const [adminPassword, setAdminPassword] = useState("");
 
   const deleteBin = trpc.core.bins.delete.useMutation({
     onSuccess: async () => {
@@ -475,6 +512,14 @@ function DeleteBinDialog({
     // Backend refuses when the bin is not empty or has load history.
     onError: (err) => toast.error(err.message),
   });
+
+  const submit = () => {
+    if (!adminPassword) {
+      toast.error("Admin password is required to delete a bin");
+      return;
+    }
+    deleteBin.mutate({ adminPassword, id: bin.id });
+  };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -492,15 +537,17 @@ function DeleteBinDialog({
             refuse to delete it.
           </p>
         )}
+        <AdminPasswordField
+          id="delete-bin-password"
+          value={adminPassword}
+          onChange={setAdminPassword}
+          hint="Deleting a bin requires the site admin password."
+        />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            onClick={() => deleteBin.mutate({ id: bin.id })}
-            disabled={deleteBin.isPending}
-          >
+          <Button variant="destructive" onClick={submit} disabled={deleteBin.isPending}>
             {deleteBin.isPending ? "Deleting…" : "Delete bin"}
           </Button>
         </DialogFooter>

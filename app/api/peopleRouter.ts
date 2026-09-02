@@ -108,6 +108,7 @@ export const peopleRouter = createRouter({
     create: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           farmerId: z.number(),
           landlordId: z.number().nullable().optional(),
           code: z.string().min(1),
@@ -117,15 +118,18 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
+        const { adminPassword, ...lot } = input;
         const [{ id }] = await getDb()
           .insert(lots)
-          .values({ ...input, landlordId: input.landlordId ?? null })
+          .values({ ...lot, landlordId: lot.landlordId ?? null })
           .$returningId();
         return getDb().query.lots.findFirst({ where: eq(lots.id, id) });
       }),
     update: publicQuery
       .input(
         z.object({
+          adminPassword: z.string(),
           id: z.number(),
           landlordId: z.number().nullable().optional(),
           landlordSplitPct: z.number().min(0).max(100).optional(),
@@ -133,15 +137,23 @@ export const peopleRouter = createRouter({
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, adminPassword, ...data } = input;
+        assertAdmin(adminPassword);
         await getDb().update(lots).set(data).where(eq(lots.id, id));
         return getDb().query.lots.findFirst({ where: eq(lots.id, id) });
       }),
     // Lots stay open until the grower says the lot is done. While CLOSED no
     // new weight sheets can be opened against the lot; reopening is allowed.
     setStatus: publicQuery
-      .input(z.object({ id: z.number(), status: z.enum(["OPEN", "CLOSED"]) }))
+      .input(
+        z.object({
+          adminPassword: z.string(),
+          id: z.number(),
+          status: z.enum(["OPEN", "CLOSED"]),
+        }),
+      )
       .mutation(async ({ input }) => {
+        assertAdmin(input.adminPassword);
         const lot = await getDb().query.lots.findFirst({ where: eq(lots.id, input.id) });
         if (!lot) throw new Error("Lot not found");
         await getDb()

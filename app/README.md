@@ -1,73 +1,50 @@
-# React + TypeScript + Vite
+# Grain Tracker — scale-house app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The elevator-side application: truck scale capture (Web Serial, simulator,
+or manual entry), multi-load weight sheets, bin inventory, people and lots,
+daily reports with end-of-day close, and optional sync to the office portal
+(`../office`).
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+React 19 + TypeScript + Vite + Tailwind + shadcn/ui on the frontend;
+Hono + tRPC v11 + Drizzle on the backend (MySQL in production, embedded
+better-sqlite3 as a dev fallback). One `npm run build` produces
+`dist/boot.js` (server, esbuild) + `dist/public` (client, Vite).
 
-## React Compiler
+## Shape
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `api/` — tRPC routers: `core` (sites/bins/admin), `people`
+  (farmers/landlords/lots), `sheets` (the weigh state machine, reports,
+  EOD close), `sync` (office portal settings + push/pull). Static serving
+  and boot in `api/boot.ts`; DB layer in `api/queries/connection.ts`.
+- `db/` — Drizzle schema (MySQL), SQLite mirror, migrations, demo seed.
+- `contracts/` — shared client/server logic: bushels/shrink math,
+  lot codes, row types, error shapes.
+- `src/` — pages (`Dashboard`, `Scale`, `Sheets`, `Bins`, `People`,
+  `Reports`), the `useScale` Web Serial hook, tRPC provider.
 
-## Expanding the ESLint configuration
+## Commands
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev      # Vite dev server (embedded SQLite when MySQL is absent)
+npm run check    # typecheck
+npm run test     # vitest unit tests (bushels/shrink, lot codes)
+npm run build    # client + server bundles → dist/
+npm start        # production server on :3000 (NODE_ENV=production)
+npm run smoke    # end-to-end tRPC smoke test against a running server
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Operational rules baked in
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- A load needs a truck ID at weigh-in (tare memory and duplicate checks
+  key on it); the server enforces it.
+- Weigh-in/weigh-out run in transactions backed by a unique
+  `(sheetId, loadNo)` index; bin inventory moves via atomic SQL deltas.
+- Sheets and days cannot be closed while a truck is mid-weigh.
+- Bins, lots, sites, farmers/landlords, and sync-settings mutations
+  require the admin password (`ADMIN_PASSWORD`).
+- Production refuses to boot when MySQL is unreachable (opt into the
+  embedded database with `ALLOW_OFFLINE=1`), aborts on failed migrations,
+  and never seeds demo data unless `SEED_DEMO=true`.
+- Date filters parse as local dates and day boundaries follow `TZ`.

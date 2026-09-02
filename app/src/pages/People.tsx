@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminPasswordField } from "@/components/AdminPasswordField";
 import { CROPS, type Crop } from "@contracts/grain";
 import type { LotRow } from "@contracts/types";
 import type { Farmer } from "@db/schema";
@@ -81,34 +82,9 @@ function EmptyRow({ cols, message }: { cols: number; message: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Admin password field (farmer/landlord changes are admin-gated server-side)
+// Admin password field — shared component (farmers/landlords/lots changes
+// are admin-gated server-side)
 // ---------------------------------------------------------------------------
-
-function AdminPasswordField({
-  id,
-  value,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>Admin password</Label>
-      <Input
-        id={id}
-        type="password"
-        autoComplete="off"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <p className="text-xs text-muted-foreground">
-        Changing farmers or landlords requires the site admin password.
-      </p>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Farmer dialog (add + edit)
@@ -343,6 +319,7 @@ function LotDialog({ onClose }: { onClose: () => void }) {
   const [landlordId, setLandlordId] = useState(NO_LANDLORD);
   const [splitPct, setSplitPct] = useState("");
   const [notes, setNotes] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
 
   const farmerIdNum = Number(farmerId);
   const nextCode = trpc.people.lots.nextCode.useQuery(
@@ -392,7 +369,12 @@ function LotDialog({ onClose }: { onClose: () => void }) {
       }
       split = n;
     }
+    if (!adminPassword) {
+      toast.error("Admin password is required to create a lot");
+      return;
+    }
     createLot.mutate({
+      adminPassword,
       farmerId: farmerIdNum,
       landlordId: landlordId === NO_LANDLORD ? undefined : Number(landlordId),
       code: code.trim(),
@@ -517,6 +499,13 @@ function LotDialog({ onClose }: { onClose: () => void }) {
               rows={2}
             />
           </div>
+
+          <AdminPasswordField
+            id="lot-admin-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Creating a lot requires the site admin password."
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -538,44 +527,61 @@ function LotDialog({ onClose }: { onClose: () => void }) {
 // Lot close confirmation
 // ---------------------------------------------------------------------------
 
-function CloseLotDialog({
+function LotStatusDialog({
   lot,
+  status,
   onClose,
 }: {
   lot: LotRow;
+  status: "OPEN" | "CLOSED";
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
+  const [adminPassword, setAdminPassword] = useState("");
+  const closing = status === "CLOSED";
 
   const setStatus = trpc.people.lots.setStatus.useMutation({
     onSuccess: async () => {
-      toast.success(`Lot ${lot.code} closed`);
+      toast.success(`Lot ${lot.code} ${closing ? "closed" : "reopened"}`);
       onClose();
       await utils.people.lots.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
 
+  const submit = () => {
+    if (!adminPassword) {
+      toast.error("Admin password is required to close or reopen a lot");
+      return;
+    }
+    setStatus.mutate({ adminPassword, id: lot.id, status });
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Close lot {lot.code}?</DialogTitle>
+          <DialogTitle>
+            {closing ? "Close" : "Reopen"} lot {lot.code}?
+          </DialogTitle>
           <DialogDescription>
-            CLOSED lots block new weight sheets from being opened against them.
-            Existing sheets are unaffected, and the lot can be reopened later.
+            {closing
+              ? "CLOSED lots block new weight sheets from being opened against them. Existing sheets are unaffected, and the lot can be reopened later."
+              : "Reopening allows new weight sheets to be opened against this lot."}
           </DialogDescription>
         </DialogHeader>
+        <AdminPasswordField
+          id="lot-status-password"
+          value={adminPassword}
+          onChange={setAdminPassword}
+          hint="Changing a lot's status requires the site admin password."
+        />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            onClick={() => setStatus.mutate({ id: lot.id, status: "CLOSED" })}
-            disabled={setStatus.isPending}
-          >
-            {setStatus.isPending ? "Closing…" : "Close lot"}
+          <Button variant="destructive" onClick={submit} disabled={setStatus.isPending}>
+            {setStatus.isPending ? "Saving…" : closing ? "Close lot" : "Reopen lot"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -722,19 +728,13 @@ function LandlordsTab() {
 }
 
 function LotsTab() {
-  const utils = trpc.useUtils();
   const lotsQuery = trpc.people.lots.list.useQuery();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [closingLot, setClosingLot] = useState<LotRow | null>(null);
+  const [statusChange, setStatusChange] = useState<{
+    lot: LotRow;
+    status: "OPEN" | "CLOSED";
+  } | null>(null);
   const lots = lotsQuery.data ?? [];
-
-  const reopen = trpc.people.lots.setStatus.useMutation({
-    onSuccess: async (_data, vars) => {
-      toast.success(`Lot #${vars.id} reopened`);
-      await utils.people.lots.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
 
   return (
     <Card>
@@ -812,7 +812,7 @@ function LotsTab() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setClosingLot(lot)}
+                        onClick={() => setStatusChange({ lot, status: "CLOSED" })}
                       >
                         Close
                       </Button>
@@ -820,10 +820,7 @@ function LotsTab() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() =>
-                          reopen.mutate({ id: lot.id, status: "OPEN" })
-                        }
-                        disabled={reopen.isPending}
+                        onClick={() => setStatusChange({ lot, status: "OPEN" })}
                       >
                         Reopen
                       </Button>
@@ -836,8 +833,12 @@ function LotsTab() {
         </Table>
       </CardContent>
       {dialogOpen && <LotDialog onClose={() => setDialogOpen(false)} />}
-      {closingLot && (
-        <CloseLotDialog lot={closingLot} onClose={() => setClosingLot(null)} />
+      {statusChange && (
+        <LotStatusDialog
+          lot={statusChange.lot}
+          status={statusChange.status}
+          onClose={() => setStatusChange(null)}
+        />
       )}
     </Card>
   );

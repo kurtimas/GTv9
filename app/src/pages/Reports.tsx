@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useSite } from "@/providers/site";
 import { fmtBu, fmtLbs } from "@contracts/grain";
+import { AdminPasswordField } from "@/components/AdminPasswordField";
 import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -153,21 +154,39 @@ export default function Reports() {
     refetchInterval: 15_000,
   });
   const [officeUrl, setOfficeUrl] = useState("");
+  // The server never returns the key — an empty field means "keep existing".
   const [officeKey, setOfficeKey] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const officeKeySet = settings.data?.officeKeySet ?? false;
   useEffect(() => {
     if (settings.data) {
       setOfficeUrl(settings.data.officeUrl);
-      setOfficeKey(settings.data.officeKey);
+      setOfficeKey("");
     }
   }, [settings.data]);
 
   const saveSettings = trpc.sync.setSettings.useMutation({
     onSuccess: async () => {
       toast.success("Office sync settings saved");
+      setOfficeKey("");
+      setAdminPassword("");
       await utils.sync.getSettings.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const saveSyncSettings = () => {
+    if (!adminPassword) {
+      toast.error("Admin password is required to change sync settings");
+      return;
+    }
+    saveSettings.mutate({
+      adminPassword,
+      officeUrl,
+      // omit the key when untouched so the stored one is kept
+      ...(officeKey.trim() !== "" ? { officeKey: officeKey.trim() } : {}),
+    });
+  };
 
   const syncNow = trpc.sync.syncNow.useMutation({
     onSuccess: async (r) => {
@@ -572,7 +591,7 @@ export default function Reports() {
                 <Input
                   id="office-key"
                   type="password"
-                  placeholder="shared key"
+                  placeholder={officeKeySet ? "unchanged — type to replace" : "shared key"}
                   value={officeKey}
                   onChange={(e) => setOfficeKey(e.target.value)}
                   className="font-mono text-xs"
@@ -580,10 +599,16 @@ export default function Reports() {
               )}
             </div>
           </div>
+          <AdminPasswordField
+            id="sync-settings-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Sync settings send your data to the office portal — they require the admin password."
+          />
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              onClick={() => saveSettings.mutate({ officeUrl, officeKey })}
+              onClick={saveSyncSettings}
               disabled={saveSettings.isPending}
             >
               {saveSettings.isPending ? "Saving…" : "Save settings"}

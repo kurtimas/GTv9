@@ -10,9 +10,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export const SCALE_BAUD_RATE = 9600;
 
 /** How many recent readings are compared to decide "stable". */
-const STABLE_WINDOW = 5;
+const STABLE_WINDOW = 8;
+/** Readings required in the window before "stable" can be reported. */
+const STABLE_MIN_READINGS = 6;
 /** Max spread (lbs) across the stable window to flag a stable reading. */
-const STABLE_TOLERANCE_LBS = 5;
+const STABLE_TOLERANCE_LBS = 25;
 /** Simulator default: a loaded truck on the scale. */
 const SIMULATOR_DEFAULT_BASE_LBS = 45_000;
 /** Simulator tick interval (ms). */
@@ -49,16 +51,17 @@ function getSerial(): SerialLike | null {
 /**
  * Extract a weight from one line of indicator output. Handles continuous
  * ASCII frames like `NT 12500 lb`, `ST,GS,+ 12500 lb`, or bare numbers:
- * the LAST numeric token on the line wins. Negatives and zero-padding-only
- * tokens are ignored (a truck never weighs 0 or less).
+ * the LAST numeric token on the line wins. Values are absolute-rounded —
+ * a freshly emptied platform often reads slightly negative, and the
+ * readout must fall back to 0 when the truck drives off.
  */
 function parseWeightFromLine(line: string): number | null {
   const tokens = line.match(/[+-]?\d[\d,]*(?:\.\d+)?/g);
   if (!tokens || tokens.length === 0) return null;
   const last = tokens[tokens.length - 1].replace(/,/g, "");
   const value = Number.parseFloat(last);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(Math.abs(value));
 }
 
 export interface ScaleSimulator {
@@ -77,7 +80,7 @@ export interface UseScale {
   connected: boolean;
   /** Latest parsed weight in whole pounds, null before any reading. */
   weightLbs: number | null;
-  /** Last ~5 readings within ±5 lbs of each other. */
+  /** true when ≥6 of the last 8 readings sit within ±25 lbs of each other. */
   stable: boolean;
   /** Human-readable error from the last connect/read failure. */
   error: string | null;
@@ -113,7 +116,7 @@ export function useScale(): UseScale {
     history.push(lbs);
     if (history.length > STABLE_WINDOW) history.shift();
     setWeightLbs(lbs);
-    if (history.length >= STABLE_WINDOW) {
+    if (history.length >= STABLE_MIN_READINGS) {
       const min = Math.min(...history);
       const max = Math.max(...history);
       setStable(max - min <= STABLE_TOLERANCE_LBS);
@@ -155,7 +158,10 @@ export function useScale(): UseScale {
     }
     setConnected(false);
     setConnecting(false);
-  }, []);
+    // Drop the last reading — a frozen number must never look live (or win
+    // over a manual entry) once the source is gone.
+    resetReadings();
+  }, [resetReadings]);
 
   const connect = useCallback(async () => {
     const serial = getSerial();
@@ -220,15 +226,22 @@ export function useScale(): UseScale {
           /* already released */
         }
         if (!stopReadingRef.current) {
-          // Stream ended unexpectedly (cable pulled, device reset).
+          // Stream ended unexpectedly (cable pulled, device reset). Close the
+          // port and drop the reading — a frozen weight must not remain
+          // capturable, and the port must be releasable for a reconnect.
           portRef.current = null;
           setConnected(false);
+          resetReadings();
           void port.close().catch(() => undefined);
         }
       }
     } catch (err) {
+      const port = portRef.current;
       portRef.current = null;
       setConnected(false);
+      // port.open() can succeed right before a failure — release it so the
+      // next connect attempt doesn't hit "port already open".
+      if (port) void port.close().catch(() => undefined);
       if (err instanceof DOMException && err.name === "NotFoundError") {
         // Operator dismissed the port picker — not an error state.
         setError(null);
@@ -245,8 +258,9 @@ export function useScale(): UseScale {
     simValueRef.current = simBaseRef.current;
     setSimActive(true);
     simTimerRef.current = setInterval(() => {
-      // Random walk within ±SIMULATOR_BAND_LBS of the base weight.
-      const drift = (Math.random() - 0.5) * 14;
+      // Random walk within ±SIMULATOR_BAND_LBS of the base weight. Drift is
+      // small enough that a parked "truck" settles inside the stable window.
+      const drift = (Math.random() - 0.5) * 6;
       let next = simValueRef.current + drift;
       const lo = simBaseRef.current - SIMULATOR_BAND_LBS;
       const hi = simBaseRef.current + SIMULATOR_BAND_LBS;
@@ -263,8 +277,9 @@ export function useScale(): UseScale {
       simTimerRef.current = null;
     }
     setSimActive(false);
-    setStable(false);
-  }, []);
+    // Same rule as a serial disconnect: no live source, no live reading.
+    resetReadings();
+  }, [resetReadings]);
 
   const simSetBaseLbs = useCallback(
     (lbs: number) => {

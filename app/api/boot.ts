@@ -29,7 +29,15 @@ if (env.isProduction) {
   const { serve } = await import("@hono/node-server");
   const { serveStaticFiles } = await import("./lib/vite");
   const { migrateAndSeedOnBoot } = await import("./migrateOnBoot");
+  const { usingDefaultAdminPassword } = await import("./lib/adminPassword");
   serveStaticFiles(app);
+  if (usingDefaultAdminPassword()) {
+    console.error(
+      "[admin] ADMIN_PASSWORD is the default — anyone on the network can edit " +
+        "sites, farmers, lots, bins, and sync settings. Set ADMIN_PASSWORD in " +
+        "the environment before relying on it.",
+    );
+  }
   await migrateAndSeedOnBoot();
 
   const port = parseInt(process.env.PORT || "3000");

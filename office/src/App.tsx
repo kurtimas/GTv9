@@ -1,23 +1,15 @@
 import { Routes, Route } from "react-router";
-import Layout from "./components/Layout";
+import OfficeLayout from "./components/OfficeLayout";
 import OfficeHome from "./pages/OfficeHome";
-import Sheets from "./pages/Sheets";
-import Bins from "./pages/Bins";
-import People from "./pages/People";
-import Reports from "./pages/Reports";
 import NotFound from "./pages/NotFound";
 
 export default function App() {
   return (
-    <Layout>
+    <OfficeLayout>
       <Routes>
         <Route path="/" element={<OfficeHome />} />
-        <Route path="/sheets" element={<Sheets />} />
-        <Route path="/bins" element={<Bins />} />
-        <Route path="/people" element={<People />} />
-        <Route path="/reports" element={<Reports />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </Layout>
+    </OfficeLayout>
   );
 }
