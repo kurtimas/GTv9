@@ -22,6 +22,14 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 import { fmtBu, fmtLbs } from "@contracts/grain";
 import type { BinRow, LoadRow, SheetRow } from "@contracts/types";
@@ -507,6 +515,105 @@ function SheetSummary({ sheet }: { sheet: SheetRow }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Loads already recorded on this sheet                                */
+/* ------------------------------------------------------------------ */
+
+/** Time a load finished weighing (second capture), or started if mid-weigh. */
+function loadTimeOf(l: LoadRow, outbound: boolean): Date {
+  return (outbound ? l.grossAt ?? l.tareAt : l.tareAt ?? l.grossAt) ?? l.createdAt;
+}
+
+function SheetLoadsCard({ sheet }: { sheet: SheetRow }) {
+  const outbound = sheet.direction === "OUTBOUND";
+  // Newest first — the operator's eye lands on the most recent load.
+  const loads = [...(sheet.loads ?? [])].sort((a, b) => b.loadNo - a.loadNo);
+  const done = loads.filter((l) => l.netLbs != null);
+  const totalNet = done.reduce((a, l) => a + (l.netLbs ?? 0), 0);
+  const totalBu = done.reduce((a, l) => a + (l.netBushels ?? 0), 0);
+
+  return (
+    <Card className="gt-panel">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <p className="gt-eyebrow">Loads on this sheet</p>
+        {done.length > 0 && (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {done.length} complete · {fmtLbs(totalNet)} lb · {fmtBu(totalBu)} bu
+          </span>
+        )}
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Load</TableHead>
+              <TableHead>Truck</TableHead>
+              <TableHead>Time</TableHead>
+              <TableHead className="text-right">Gross lb</TableHead>
+              <TableHead className="text-right">Tare lb</TableHead>
+              <TableHead className="text-right">Net lb</TableHead>
+              <TableHead className="text-right">Net bu</TableHead>
+              <TableHead className="text-right">Bin</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loads.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={8}
+                  className="py-6 text-center text-sm text-muted-foreground"
+                >
+                  No loads yet — the first weigh-in will appear here.
+                </TableCell>
+              </TableRow>
+            ) : (
+              loads.map((l) => {
+                const midWeigh = l.netLbs == null;
+                return (
+                  <TableRow key={l.id} className={midWeigh ? "bg-live/5" : undefined}>
+                    <TableCell className="font-mono text-xs font-semibold tabular-nums">
+                      {l.loadNo}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {l.truckId ?? "—"}
+                      {midWeigh && (
+                        <Badge
+                          variant="outline"
+                          className="ml-2 border-live/60 font-mono text-[10px] uppercase tracking-wider text-live"
+                        >
+                          on the lot
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {loadTimeOf(l, outbound).toLocaleTimeString("en-US", { hour12: false })}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums">
+                      {l.grossLbs != null ? fmtLbs(l.grossLbs) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums">
+                      {l.tareLbs != null ? fmtLbs(l.tareLbs) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs font-semibold tabular-nums">
+                      {midWeigh ? "—" : fmtLbs(l.netLbs ?? 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
+                      {l.netBushels != null ? fmtBu(l.netBushels) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                      {l.binName ?? (l.binId != null ? `#${l.binId}` : "—")}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Scale page — /scale (standalone) or /scale/:sheetId                 */
 /* ------------------------------------------------------------------ */
 
@@ -634,6 +741,7 @@ export default function Scale() {
               onChanged={invalidate}
             />
           </div>
+          <SheetLoadsCard sheet={sheet} />
         </>
       )}
     </div>
