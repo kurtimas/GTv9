@@ -16,23 +16,11 @@ main-office portal that receives end-of-day syncs.
   secrets, builds `app/` with Docker Compose + MySQL behind Caddy). **This is
   the canonical install script.**
 - `vps-grain-stack-setup.sh` — legacy stub; points at `gtv8-vps-setup.sh`.
-- `grain-track-ubuntu-bootstrap/` — Ubuntu workstation bootstrap kit
-  (checksums in `SHA256SUMS.txt`).
-- `design/`, `gt-rebuild/` — design notes and rebuild recon (partly stale;
-  treat code as the source of truth).
 - `Grain-Tracker-Install-Guide.md` + `.docx` — operator install guide.
-- `scale-dashboard-rebuild-spec.md` — a proposed single-screen scale
-  dashboard rebuild. **Not implemented in this tree** — see below.
 
-## Status of the dashboard rebuild spec
+## Unwired groundwork
 
-`scale-dashboard-rebuild-spec.md` (single-screen console with keyboard
-shortcuts Space/Enter/N, sound beeps, ticket printing/auto-print, tare
-memory, tare-deviation + duplicate-truck warnings, est-net, auto-advance,
-ops overview) is **a design document only**. None of it exists in this
-codebase — earlier READMEs claimed otherwise; that was wrong. What ships is
-a multi-page app (Dashboard → `/scale/:sheetId` weigh console → Sheets
-archive). Spec-aligned groundwork that IS present but unwired:
+Present in the code but not used by any UI yet:
 
 - `sheets.truckTares` API (tare memory query; no UI calls it)
 - `#ticket-print` print stylesheet in `app/src/index.css` (no component
