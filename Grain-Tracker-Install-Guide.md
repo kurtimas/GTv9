@@ -289,11 +289,13 @@ backup dump somewhere that is not the server.*
 
 ### Before the server dies (do this today)
 
-1. Take a fresh dump any time: `sudo grain-backup`
-2. Download it OFF the server (Bitvise → SFTP window →
-   `/var/backups/grain-tracker/`): grab the newest
-   `graintracker-<date>.sql.gz` to your PC. Weekly is fine; do it
-   before any planned wipe or provider migration.
+1. **Easiest — download a backup from inside the app**: Reports page →
+   **Backup & restore → Download backup**. Saves a `.json` file with every
+   table (farmers, lots, sheets, loads, bins, settings) to your PC.
+2. The server **also** takes its own SQL dump nightly at 01:00 into
+   `/var/backups/grain-tracker/` (14 days kept); take one on demand with
+   `sudo grain-backup` and download it via SFTP — that `.sql.gz` format is
+   the fallback route, see the restore note below.
 3. Optional but handy: save a copy of `/opt/gtv9-deploy/.env`
    (`sudo cat /opt/gtv9-deploy/.env > gtv9-env-backup.txt`, then SFTP it
    down) — it holds your app admin password and settings for reference.
@@ -315,22 +317,28 @@ backup dump somewhere that is not the server.*
    Check the CONFIG block first (nano) — `DOMAIN` and `TIMEZONE` matter.
    This rebuilds everything: firewall, desktop, Docker, the app, HTTPS,
    backups, auto-start. Note the printed **app admin password**.
-3. Upload your saved dump back to the server (Bitvise SFTP → drop
-   `graintracker-<date>.sql.gz` into `/home/vpsadmin/`).
-4. Restore the data into the fresh database:
-   ```bash
-   gunzip < /home/vpsadmin/graintracker-<date>.sql.gz | \
-     docker exec -i grain-mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" graintracker'
-   ```
-   That brings back every farmer, lot, weight sheet, load, and bin level.
-5. If you had a custom app admin password, re-set it and restart the app:
+3. **Restore your data from inside the app** (the `.json` backup from
+   step 1 of "Before the server dies"): open **Reports → Backup &
+   restore**, choose the file, type **REPLACE**, enter the app admin
+   password, and click **Restore database**. A safety copy of the
+   (empty) current data downloads automatically first. Every farmer,
+   lot, weight sheet, load, and bin level comes back.
+4. If you had a custom app admin password, re-set it and restart the app:
    ```bash
    sudo sed -i 's|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=YourAppPassword|' /opt/gtv9-deploy/.env
    cd /opt/gtv9-deploy && docker compose up -d --force-recreate app
    ```
-6. Verify in the browser: dashboard, a farmer, a sheet, bin levels.
+5. Verify in the browser: dashboard, a farmer, a sheet, bin levels.
    Office-sync settings live in the database, so they come back with the
    restore automatically.
+
+**Only have the old `.sql.gz` dump** (backups taken before the in-app
+restore existed)? SFTP it up and restore via the MySQL container:
+
+```bash
+gunzip < /home/vpsadmin/graintracker-<date>.sql.gz | \
+  docker exec -i grain-mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" graintracker'
+```
 
 **If the server dies with no off-server backup**, the data is gone except
 for whatever the office portal mirrored — which is why step 2 above is

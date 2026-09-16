@@ -757,6 +757,183 @@ export default function Reports() {
           </div>
         </CardContent>
       </Card>
+
+      <BackupRestoreCard />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- backup
+
+/**
+ * Full-database backup/restore (admin-gated). Backup downloads a portable
+ * JSON document of every table; restore replaces ALL current data with an
+ * uploaded document. A safety copy of the current data is downloaded
+ * automatically before any restore runs. The server-side nightly dump
+ * (grain-backup) is separate and keeps 14 days of .sql.gz files.
+ */
+function BackupRestoreCard() {
+  const [adminPassword, setAdminPassword] = useState("");
+  const [filePayload, setFilePayload] = useState<unknown>(null);
+  const [fileName, setFileName] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const { passwordRequired } = useAdminGate();
+
+  const downloadJson = (filename: string, data: string) => {
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportMut = trpc.backup.export.useMutation({
+    onSuccess: (r) => {
+      downloadJson(r.filename, JSON.stringify(r.payload, null, 2));
+      toast.success("Backup downloaded — keep it somewhere safe");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const restoreMut = trpc.backup.restore.useMutation({
+    onSuccess: (r) => {
+      toast.success(`Database restored — ${r.summary || "empty dataset"}`, {
+        description: "Reloading…",
+        duration: 8_000,
+      });
+      setTimeout(() => window.location.reload(), 1800);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Safety first: before replacing anything, download a copy of the data
+  // that is about to be replaced, then chain the restore.
+  const safetyMut = trpc.backup.export.useMutation({
+    onSuccess: (r) => {
+      downloadJson(`safety-copy-before-restore-${r.filename}`, JSON.stringify(r.payload));
+      toast("Safety copy of current data downloaded", {
+        description: "Keep that file — restoring it undoes this restore.",
+        duration: 10_000,
+      });
+      restoreMut.mutate({ payload: filePayload, adminPassword: adminPassword || undefined });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const onPickFile = async (file: File) => {
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if ((parsed as { app?: string })?.app !== "grain-tracker") {
+        toast.error("That file is not a Grain Tracker backup");
+        return;
+      }
+      setFilePayload(parsed);
+      setFileName(file.name);
+    } catch {
+      toast.error("Could not read that file as JSON");
+    }
+  };
+
+  const canRestore =
+    filePayload != null &&
+    confirmText === "REPLACE" &&
+    (!passwordRequired || adminPassword !== "") &&
+    !safetyMut.isPending &&
+    !restoreMut.isPending;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Backup &amp; restore</CardTitle>
+        <CardDescription>
+          A full copy of every table as a single file. The server also takes
+          its own automatic backup nightly (14 days kept on the server).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            disabled={exportMut.isPending}
+            onClick={() => exportMut.mutate({ adminPassword: adminPassword || undefined })}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {exportMut.isPending ? "Preparing…" : "Download backup"}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Downloads a .json copy of all data.
+          </span>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-2">
+          <div className="gt-eyebrow">Restore from a backup file</div>
+          <Alert variant="destructive">
+            <AlertTitle>Restore replaces ALL current data</AlertTitle>
+            <AlertDescription>
+              Every sheet, load, farmer, and bin level is replaced by the
+              uploaded file. A safety copy of the current data downloads
+              automatically first — keep it.
+            </AlertDescription>
+          </Alert>
+          <Input
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onPickFile(f);
+              e.target.value = "";
+            }}
+            className="text-xs"
+          />
+          {fileName && (
+            <p className="font-mono text-xs text-muted-foreground">
+              Loaded: {fileName}
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="restore-confirm" className="text-xs">
+              Type <span className="font-mono font-bold">REPLACE</span> to confirm
+            </Label>
+            <Input
+              id="restore-confirm"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="REPLACE"
+              className="font-mono"
+            />
+          </div>
+          {passwordRequired && (
+            <AdminPasswordField
+              id="restore-admin-password"
+              value={adminPassword}
+              onChange={setAdminPassword}
+              hint="Restoring requires the site admin password."
+            />
+          )}
+          <Button
+            variant="destructive"
+            disabled={!canRestore}
+            onClick={() => {
+              if (passwordRequired && !adminPassword) {
+                toast.error("Admin password is required to restore");
+                return;
+              }
+              safetyMut.mutate({ adminPassword: adminPassword || undefined });
+            }}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {restoreMut.isPending
+              ? "Restoring…"
+              : safetyMut.isPending
+                ? "Saving safety copy…"
+                : "Restore database"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

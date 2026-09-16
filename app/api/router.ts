@@ -1,4 +1,5 @@
 import { createRouter, publicQuery } from "@shared/api/middleware";
+import { backupRouter } from "@shared/api/backupRouter";
 import { coreRouter } from "@shared/api/coreRouter";
 import { peopleRouter } from "@shared/api/peopleRouter";
 import { sheetsRouter } from "@shared/api/sheetsRouter";
@@ -14,6 +15,7 @@ export const appRouter = createRouter({
   shipments: shipmentsRouter,
   audit: auditRouter,
   sync: syncRouter,
+  backup: backupRouter,
 });
 
 export type AppRouter = typeof appRouter;

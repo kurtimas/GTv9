@@ -374,5 +374,34 @@ check(
   `moisture=${gradedClosed?.moisturePct}`,
 );
 
+// 18. in-app backup/restore round-trip -----------------------------------------
+let exportBlocked = false;
+try {
+  await client.backup.export.mutate({ adminPassword: "definitely-wrong" });
+} catch {
+  exportBlocked = true;
+}
+check(
+  "backup export " + (gateClosed ? "needs the admin password" : "is open (gate open)"),
+  gateClosed ? exportBlocked : !exportBlocked,
+);
+const backup = await client.backup.export.mutate({ adminPassword: pw() });
+check(
+  "backup.export produces a full backup",
+  backup.payload?.app === "grain-tracker" &&
+    backup.payload.tables.farmers.length > 0 &&
+    backup.payload.tables.loads.length > 0,
+);
+const farmersInBackup = backup.payload.tables.farmers.length;
+// mutate the data, then roll back with the backup
+await client.people.farmers.create.mutate({ name: "Restore Probe" });
+await client.backup.restore.mutate({ payload: backup.payload, adminPassword: pw() });
+const farmersAfterRestore = (await client.people.farmers.list.query()).length;
+check(
+  "restore rolls data back to the backup",
+  farmersAfterRestore === farmersInBackup,
+  `${farmersAfterRestore} farmers`,
+);
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

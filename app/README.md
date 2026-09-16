@@ -45,6 +45,10 @@ npm run smoke    # end-to-end tRPC smoke test against a running server
 - Closing a lot closes its OPEN weight sheets (`closeReason: LOT_CLOSED`,
   refused while a truck is mid-weigh) and the mutation reports which
   sheets were closed; reopening the lot is allowed.
+- The Reports page can download a full-database JSON backup and restore
+  an uploaded one (both admin-gated; a safety copy of current data
+  downloads automatically before any restore). The server-side nightly
+  `grain-backup` SQL dump continues independently.
 - The admin password gate (OPEN while `ADMIN_PASSWORD` is unset or the
   default `grain-admin`; a boot warning says so — set a non-default value
   to close it) covers: site admin, **editing or removing a farmer**,
