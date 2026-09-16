@@ -414,7 +414,11 @@ chmod +x /usr/local/sbin/grain-update
 log "10/10  Backups + HTTPS"
 #-------------------------------------------------------------------------------
 mkdir -p /var/backups/grain-tracker
-chmod 700 /var/backups/grain-tracker
+# root owns the backups (they contain customer data), but the sudo group —
+# vpsadmin is in it — may list and read, so dumps can be SFTP'd off the
+# server without root gymnastics.
+chown root:sudo /var/backups/grain-tracker
+chmod 750 /var/backups/grain-tracker
 
 cat > /usr/local/sbin/grain-backup <<'EOF'
 #!/usr/bin/env bash

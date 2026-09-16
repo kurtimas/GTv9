@@ -247,12 +247,15 @@ Run these on the VPS (logged in as `vpsadmin`):
 | Find the office sync key (`SYNC_KEY`) | `sudo grep SYNC_KEY /opt/gtv9-deploy/.env` |
 | Manual database backup | `sudo grain-backup` |
 | Find backups (nightly, kept 14 days) | `ls /var/backups/grain-tracker` |
+| One-time: allow SFTP access to backups | `sudo chgrp sudo /var/backups/grain-tracker && sudo chmod 750 /var/backups/grain-tracker` |
 | Check auto-start service | `sudo systemctl status grain-tracker` |
 | Reboot the whole server | `sudo reboot` — **the app starts itself** |
 
 **Copy backups off the server weekly.** In Bitvise, open the **SFTP** window,
 browse to `/var/backups/grain-tracker/`, and download the newest `.sql.gz` file
 to your PC. If the server ever dies, that file plus this guide rebuilds everything.
+(Servers installed before June 2026 keep that folder root-only — run the
+"one-time" command in the table above and SFTP works as `vpsadmin`.)
 
 ---
 
