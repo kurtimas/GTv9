@@ -46,17 +46,19 @@
 
 ---
 
-## PART 2 — Put the setup script on the server
+## PART 2 — Download the setup script onto the server
 
 The setup script does all the heavy lifting (about 10 automated steps).
+**Always download it fresh from GitHub** — an old copy (saved on your PC
+or left on a previous server) will not match the current app and can
+fail mid-install:
 
-1. Create the file:
-   ```bash
-   nano gtv8-vps-setup.sh
-   ```
-2. A text editor opens. **Paste the entire contents** of `gtv8-vps-setup.sh`
-   (from the repo) into the window — in Bitvise's terminal, **right-click** to paste.
-3. Save and exit: press **Ctrl+O**, then **Enter**, then **Ctrl+X**.
+```bash
+curl -fsSL https://raw.githubusercontent.com/kurtimas/GTv9/main/gtv8-vps-setup.sh -o gtv8-vps-setup.sh
+```
+
+If `curl` is missing on the fresh box, run `apt update && apt install -y curl`
+first, then retry. Next, edit the CONFIG block (Part 3).
 
 ---
 
