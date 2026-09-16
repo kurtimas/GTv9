@@ -145,7 +145,6 @@ export const coreRouter = createRouter({
     create: publicQuery
       .input(
         z.object({
-          adminPassword: z.string(),
           siteId: z.number(),
           name: z.string().min(1),
           crop: z.enum(CROPS),
@@ -153,10 +152,9 @@ export const coreRouter = createRouter({
         }),
       )
       .mutation(async ({ input, ctx }) => {
-        assertAdmin(input.adminPassword);
         const db = getDb();
         const operator = await resolveOperator(db, ctx.operator);
-        const { adminPassword, ...bin } = input;
+        const bin = input;
         const [{ id }] = await db.insert(bins).values(bin).$returningId();
         await writeAudit(db, {
           actor: operator,

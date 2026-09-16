@@ -12,7 +12,7 @@ type Db = ReturnType<typeof getDb>;
 /** An open transaction on the shared db handle (same shape routers use). */
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type AuditAction = "create" | "update" | "void" | "adjust";
+export type AuditAction = "create" | "update" | "delete" | "void" | "adjust";
 
 export type AuditEntry = {
   /** operator name from the request context; defaults to 'system' */

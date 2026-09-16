@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Plus, Users } from "lucide-react";
+import { Pencil, Plus, Trash2, Users } from "lucide-react";
 import { trpc } from "@shared/src/lib/trpc";
 import { toast } from "@shared/src/components/ui/sonner";
 import { Badge } from "@shared/src/components/ui/badge";
@@ -594,6 +594,7 @@ function LotStatusDialog({
 function FarmersTab() {
   const farmersQuery = trpc.people.farmers.list.useQuery();
   const [dialog, setDialog] = useState<{ farmer: Farmer | null } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Farmer | null>(null);
   const farmers = farmersQuery.data ?? [];
 
   return (
@@ -659,6 +660,16 @@ function FarmersTab() {
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Remove farmer"
+                      aria-label={`Remove farmer ${f.name}`}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteTarget(f)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -673,7 +684,84 @@ function FarmersTab() {
           onClose={() => setDialog(null)}
         />
       )}
+      {deleteTarget && (
+        <DeleteFarmerDialog
+          key={deleteTarget.id}
+          farmer={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Farmer remove confirmation — admin-gated, refused while the farmer still
+// has lots or weight sheets.
+// ---------------------------------------------------------------------------
+
+function DeleteFarmerDialog({
+  farmer,
+  onClose,
+}: {
+  farmer: Farmer;
+  onClose: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [adminPassword, setAdminPassword] = useState("");
+  const { passwordRequired } = useAdminGate();
+
+  const deleteFarmer = trpc.people.farmers.delete.useMutation({
+    onSuccess: async () => {
+      toast.success(`Farmer "${farmer.name}" removed`);
+      onClose();
+      await Promise.all([
+        utils.people.farmers.list.invalidate(),
+        utils.people.lots.list.invalidate(),
+      ]);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remove farmer {farmer.name}?</DialogTitle>
+          <DialogDescription>
+            This permanently removes the grower and their contact details.
+            Farmers with lots or weight sheets on record cannot be removed.
+          </DialogDescription>
+        </DialogHeader>
+        {passwordRequired && (
+          <AdminPasswordField
+            id="delete-farmer-password"
+            value={adminPassword}
+            onChange={setAdminPassword}
+            hint="Removing a farmer requires the site admin password."
+          />
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={
+              deleteFarmer.isPending || (passwordRequired && adminPassword === "")
+            }
+            onClick={() =>
+              deleteFarmer.mutate({
+                id: farmer.id,
+                adminPassword: adminPassword || undefined,
+              })
+            }
+          >
+            {deleteFarmer.isPending ? "Removing…" : "Remove farmer"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

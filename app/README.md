@@ -47,10 +47,12 @@ npm run smoke    # end-to-end tRPC smoke test against a running server
   sheets were closed; reopening the lot is allowed.
 - The admin password gate (OPEN while `ADMIN_PASSWORD` is unset or the
   default `grain-admin`; a boot warning says so — set a non-default value
-  to close it) covers: site admin, **editing an existing farmer**,
-  bin create/edit/adjust, **changing or voiding loads on a CLOSED
-  ticket**, and sync settings. Day-to-day work — adding farmers, lots
-  and sheets, weighing, closing lots — needs no password.
+  to close it) covers: site admin, **editing or removing a farmer**,
+  bin edit (name/crop/capacity), **bin level corrections**, bin delete,
+  **correcting, re-binning, or voiding recorded load weights (any sheet
+  state)**, grades on a CLOSED ticket, and sync settings. Day-to-day
+  work — adding farmers, bins, lots and sheets, weighing, grading OPEN
+  sheets, closing lots — needs no password.
 - Production refuses to boot when MySQL is unreachable (opt into the
   embedded database with `ALLOW_OFFLINE=1`), aborts on failed migrations,
   and never seeds demo data unless `SEED_DEMO=true`.

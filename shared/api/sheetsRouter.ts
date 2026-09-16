@@ -583,9 +583,8 @@ export const sheetsRouter = createRouter({
       if (load.voidedAt) throw new Error("Load is voided");
       const s = await db.query.weightSheets.findFirst({ where: eq(weightSheets.id, load.sheetId) });
       if (!s) throw new Error("Sheet not found");
-      if (s.status === "CLOSED") {
-        assertAdmin(input.adminPassword);
-      }
+      // Correcting recorded weights always requires the admin password.
+      assertAdmin(input.adminPassword);
       const operator = await resolveOperator(db, ctx.operator);
       const netLbs = input.grossLbs - input.tareLbs;
       if (netLbs <= 0) throw new Error("Net weight must be positive");
@@ -731,9 +730,9 @@ export const sheetsRouter = createRouter({
       if (load.voidedAt) throw new Error("Load is voided");
       const s = await db.query.weightSheets.findFirst({ where: eq(weightSheets.id, load.sheetId) });
       if (!s) throw new Error("Sheet not found");
-      if (s.status === "CLOSED") {
-        assertAdmin(input.adminPassword);
-      }
+      // Reassigning a load's bin moves settled weight — always requires the
+      // admin password.
+      assertAdmin(input.adminPassword);
       const operator = await resolveOperator(db, ctx.operator);
       if (input.binId != null) {
         const bin = await db.query.bins.findFirst({ where: eq(bins.id, input.binId) });
@@ -817,9 +816,8 @@ export const sheetsRouter = createRouter({
       if (load.voidedAt) throw new Error(`Load ${load.loadNo} is already voided`);
       const s = await db.query.weightSheets.findFirst({ where: eq(weightSheets.id, load.sheetId) });
       if (!s) throw new Error("Sheet not found");
-      if (s.status === "CLOSED") {
-        assertAdmin(input.adminPassword);
-      }
+      // Voiding recorded weight always requires the admin password.
+      assertAdmin(input.adminPassword);
       const operator = await resolveOperator(db, ctx.operator);
       const now = new Date();
       await db.transaction(async (tx) => {

@@ -172,8 +172,6 @@ function AddBinDialog({
   const [name, setName] = useState("");
   const [crop, setCrop] = useState<Crop>("Corn");
   const capacity = useCapacityConverter(crop);
-  const [adminPassword, setAdminPassword] = useState("");
-  const { passwordRequired } = useAdminGate();
 
   const createBin = trpc.core.bins.create.useMutation({
     onSuccess: async () => {
@@ -201,12 +199,7 @@ function AddBinDialog({
       toast.error("Enter a valid capacity");
       return;
     }
-    if (passwordRequired && !adminPassword) {
-      toast.error("Admin password is required to add a bin");
-      return;
-    }
     createBin.mutate({
-      adminPassword,
       siteId: siteIdNum,
       name: name.trim(),
       crop,
@@ -272,12 +265,6 @@ function AddBinDialog({
             </div>
           </div>
           <CapacityFields converter={capacity} />
-          <AdminPasswordField
-            id="add-bin-password"
-            value={adminPassword}
-            onChange={setAdminPassword}
-            hint="Adding a bin requires the site admin password."
-          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

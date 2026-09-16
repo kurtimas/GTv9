@@ -44,6 +44,7 @@ import { Alert, AlertDescription, AlertTitle } from "@shared/src/components/ui/a
 import { QueryError } from "@shared/src/components/QueryError";
 import { GradesDialog } from "@/components/GradesDialog";
 import { AdminPasswordField } from "@/components/AdminPasswordField";
+import { useAdminGate } from "@/hooks/useAdminGate";
 import { TicketPrint } from "@/components/TicketPrint";
 import { CROPS, fmtBu, fmtLbs } from "@contracts/grain";
 import type { LoadRow, SheetRow } from "@contracts/types";
@@ -543,10 +544,11 @@ function SheetDetailDialog({
   const sheet = detailQ.data?.sheet;
   const events = detailQ.data?.events ?? [];
   const loads = sheet?.loads ?? [];
-  // Recorded data stays editable on CLOSED (locked) tickets — those edits
-  // ask for the admin password inside each dialog.
+  // Recorded data stays editable — weight/grade/bin/void edits ask for the
+  // admin password (always for weights/bins/void, closed-only for grades).
   const editable = sheet != null;
   const locked = sheet?.status === "CLOSED";
+  const { passwordRequired } = useAdminGate();
   const siteBins = (binsQ.data ?? []).filter(
     (b) => sheet != null && b.siteId === sheet.siteId && b.crop === sheet.crop,
   );
@@ -901,7 +903,6 @@ function SheetDetailDialog({
           <WeightsDialog
             key={weightsLoad.id}
             load={weightsLoad}
-            locked={locked}
             open
             onOpenChange={(o) => !o && setWeightsLoad(null)}
           />
@@ -911,7 +912,6 @@ function SheetDetailDialog({
             key={binLoad.id}
             load={binLoad}
             bins={siteBins}
-            locked={locked}
             open
             onOpenChange={(o) => !o && setBinLoad(null)}
           />
@@ -952,12 +952,12 @@ function SheetDetailDialog({
                 autoFocus
               />
             </div>
-            {locked && (
+            {passwordRequired && (
               <AdminPasswordField
-                id="void-locked-password"
+                id="void-admin-password"
                 value={voidPassword}
                 onChange={setVoidPassword}
-                hint="This ticket is locked (closed) — voiding a load on it requires the site admin password."
+                hint="Voiding recorded weight requires the site admin password."
               />
             )}
             <DialogFooter>
@@ -969,7 +969,7 @@ function SheetDetailDialog({
                 disabled={
                   voidMut.isPending ||
                   voidReason.trim().length < 3 ||
-                  (locked && voidPassword === "")
+                  (passwordRequired && voidPassword === "")
                 }
                 onClick={() =>
                   voidTarget &&
@@ -1064,13 +1064,10 @@ function SheetDetailDialog({
 
 function WeightsDialog({
   load,
-  locked,
   open,
   onOpenChange,
 }: {
   load: LoadRow;
-  /** sheet is CLOSED — the edit needs the admin password */
-  locked?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -1079,6 +1076,8 @@ function WeightsDialog({
   const [tare, setTare] = useState(numStr(load.tareLbs));
   const [reason, setReason] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  // Correcting recorded weights is admin-gated whenever the gate is closed.
+  const { passwordRequired } = useAdminGate();
 
   const mut = trpc.sheets.updateLoadWeights.useMutation({
     onSuccess: () => {
@@ -1100,7 +1099,7 @@ function WeightsDialog({
     netPreview != null &&
     netPreview > 0 &&
     reason.trim().length >= 3 &&
-    (!locked || adminPassword !== "");
+    (!passwordRequired || adminPassword !== "");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1169,12 +1168,12 @@ function WeightsDialog({
             </p>
           )}
         </div>
-        {locked && (
+        {passwordRequired && (
           <AdminPasswordField
-            id="weights-locked-password"
+            id="weights-admin-password"
             value={adminPassword}
             onChange={setAdminPassword}
-            hint="This ticket is locked (closed) — correcting weights requires the site admin password."
+            hint="Correcting recorded weights moves grain — it requires the site admin password."
           />
         )}
         <DialogFooter>
@@ -1208,20 +1207,20 @@ function WeightsDialog({
 function BinAssignDialog({
   load,
   bins,
-  locked,
   open,
   onOpenChange,
 }: {
   load: LoadRow;
   bins: { id: number; name: string; currentLbs: number; capacityLbs: number }[];
-  /** sheet is CLOSED — the edit needs the admin password */
-  locked?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const invalidate = useInvalidateSheets();
   const [binId, setBinId] = useState(load.binId != null ? String(load.binId) : "none");
   const [adminPassword, setAdminPassword] = useState("");
+  // Moving settled grain between bins is admin-gated whenever the gate is
+  // closed.
+  const { passwordRequired } = useAdminGate();
 
   const mut = trpc.sheets.assignLoadBin.useMutation({
     onSuccess: () => {
@@ -1263,12 +1262,12 @@ function BinAssignDialog({
             </p>
           )}
         </div>
-        {locked && (
+        {passwordRequired && (
           <AdminPasswordField
-            id="bin-locked-password"
+            id="bin-admin-password"
             value={adminPassword}
             onChange={setAdminPassword}
-            hint="This ticket is locked (closed) — moving grain between bins requires the site admin password."
+            hint="Moving grain between bins requires the site admin password."
           />
         )}
         <DialogFooter>
@@ -1276,7 +1275,7 @@ function BinAssignDialog({
             Cancel
           </Button>
           <Button
-            disabled={mut.isPending || (locked && adminPassword === "")}
+            disabled={mut.isPending || (passwordRequired && adminPassword === "")}
             onClick={() =>
               mut.mutate({
                 loadId: load.id,

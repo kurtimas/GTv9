@@ -63,6 +63,13 @@ function check(name, cond, extra = "") {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Admin gate state — weight corrections, bin moves, and voids require the
+// password whenever the gate is closed (non-default ADMIN_PASSWORD).
+const gate = await client.core.admin.status.query();
+const gateClosed = gate.passwordRequired;
+const adminPw = process.env.SMOKE_ADMIN_PASSWORD || "grain-admin";
+const pw = () => (gateClosed ? adminPw : undefined);
+
 // 1. connectivity -------------------------------------------------------
 const ping = await client.ping.query();
 check("ping", ping.ok === true);
@@ -166,6 +173,7 @@ const corrected = await client.sheets.updateLoadWeights.mutate({
   grossLbs: 81250,
   tareLbs: 30000,
   changeReason: "smoke test correction",
+  adminPassword: pw(),
 });
 check("updateWeights recomputes net", corrected.netLbs === 51750 - 500, `net=${corrected.netLbs}`);
 if (binId) {
@@ -180,6 +188,7 @@ await client.sheets.updateLoadWeights.mutate({
   grossLbs: 81250,
   tareLbs: 29500,
   changeReason: "smoke test restore",
+  adminPassword: pw(),
 });
 
 // 9. audit trail ------------------------------------------------------------
@@ -217,7 +226,7 @@ check("closeDay refuses while a truck is mid-weigh", closeBlocked);
 const openSheets = await client.sheets.open.query();
 const stranded = openSheets.filter((s) => s.activeLoad != null);
 for (const s of stranded) {
-  await client.sheets.voidLoad.mutate({ loadId: s.activeLoad.id, voidReason: "smoke: in-flight before close" });
+  await client.sheets.voidLoad.mutate({ loadId: s.activeLoad.id, voidReason: "smoke: in-flight before close", adminPassword: pw() });
 }
 check("in-flight loads voided before close", stranded.length >= 1, `${stranded.length} voided`);
 const closed = await client.sheets.closeDay.mutate();
@@ -229,9 +238,6 @@ check("sheet status CLOSED after close-day", got.sheet.status === "CLOSED");
 // password so the probe can never mutate anything. When the gate is open
 // (default ADMIN_PASSWORD) the mutations would really execute — so no
 // destructive probe is sent at all.
-const gate = await client.core.admin.status.query();
-const gateClosed = gate.passwordRequired;
-const adminPw = process.env.SMOKE_ADMIN_PASSWORD || "grain-admin";
 if (gateClosed) {
   let editBlocked = false;
   try {
@@ -271,7 +277,7 @@ const tmp = await client.sheets.create.mutate({
 await client.sheets.weighFirst.mutate({ id: tmp.id, weightLbs: 30000, truckId: "SMOKE-02" });
 const tmpSheet = await client.sheets.get.query({ id: tmp.id });
 const tmpLoadId = tmpSheet.sheet.loads.at(-1)?.id;
-await client.sheets.voidLoad.mutate({ loadId: tmpLoadId, voidReason: "smoke test void" });
+await client.sheets.voidLoad.mutate({ loadId: tmpLoadId, voidReason: "smoke test void", adminPassword: pw() });
 const afterVoid = await client.sheets.get.query({ id: tmp.id });
 check("void removes the in-progress load", afterVoid.sheet.loads.length === 0);
 
@@ -282,6 +288,26 @@ const newLot = await client.people.lots.create.mutate({
   farmerId: farmer.id, code: `SMOKE-${Date.now()}`, crop: "Corn",
 });
 check("lots.create without admin password", newLot?.id != null);
+// removing a farmer IS gated — refused without the password, allowed with it
+const doomedFarmer = await client.people.farmers.create.mutate({ name: "Doomed Farmer" });
+let farmerDeleteBlocked = false;
+try {
+  await client.people.farmers.delete.mutate({ id: doomedFarmer.id });
+} catch {
+  farmerDeleteBlocked = true;
+}
+check(
+  "farmers.delete without password " + (gateClosed ? "is refused" : "is allowed (gate open)"),
+  gateClosed ? farmerDeleteBlocked : !farmerDeleteBlocked,
+);
+if (gateClosed) {
+  await client.people.farmers.delete.mutate({ id: doomedFarmer.id, adminPassword: adminPw });
+}
+const farmersAfter = await client.people.farmers.list.query();
+check(
+  "farmers.delete removes the farmer",
+  !farmersAfter.some((f) => f.id === doomedFarmer.id),
+);
 
 // 16. closing a lot closes its OPEN weight sheets ------------------------------------
 const lotsNow = await client.people.lots.list.query();

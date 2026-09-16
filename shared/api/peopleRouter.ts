@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createRouter, publicQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { assertAdmin } from "./lib/adminPassword";
-import { farmers, landlords, lots } from "../db/schema";
+import { farmers, landlords, lots, weightSheets } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { CROPS } from "../contracts/grain";
 import { nextLotCode } from "../contracts/lotCode";
@@ -68,6 +68,44 @@ export const peopleRouter = createRouter({
           after: data,
         });
         return db.query.farmers.findFirst({ where: eq(farmers.id, id) });
+      }),
+    // Removing a farmer is an admin action and is refused while the farmer
+    // still has lots or weight sheets — reassign those first.
+    delete: publicQuery
+      .input(z.object({ adminPassword: z.string().optional(), id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        assertAdmin(input.adminPassword);
+        const db = getDb();
+        const operator = await resolveOperator(db, ctx.operator);
+        const farmer = await db.query.farmers.findFirst({ where: eq(farmers.id, input.id) });
+        if (!farmer) throw new Error("Farmer not found");
+        const lotRefs = await db
+          .select({ id: lots.id })
+          .from(lots)
+          .where(eq(lots.farmerId, input.id))
+          .limit(1);
+        if (lotRefs.length > 0)
+          throw new Error(
+            `${farmer.name} still has lots — close and reassign them before removing the farmer`,
+          );
+        const sheetRefs = await db
+          .select({ id: weightSheets.id })
+          .from(weightSheets)
+          .where(eq(weightSheets.farmerId, input.id))
+          .limit(1);
+        if (sheetRefs.length > 0)
+          throw new Error(
+            `${farmer.name} has weight sheets on record and cannot be removed`,
+          );
+        await db.delete(farmers).where(eq(farmers.id, input.id));
+        await writeAudit(db, {
+          actor: operator,
+          action: "delete",
+          entityType: "farmer",
+          entityId: input.id,
+          before: { name: farmer.name, phone: farmer.phone, email: farmer.email },
+        });
+        return { ok: true };
       }),
   }),
 
