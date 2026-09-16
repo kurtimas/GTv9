@@ -274,6 +274,65 @@ to your PC. If the server ever dies, that file plus this guide rebuilds everythi
 
 ---
 
+## PART 10 — Disaster recovery: rebuilding after a server wipe
+
+The server is disposable — the script rebuilds it from GitHub in about
+30 minutes. **Your data is not disposable**: it lives in the MySQL data
+volume and in `/var/backups/grain-tracker/*.sql.gz`, both of which die
+with the server. The whole DR plan is one sentence: *keep a recent
+backup dump somewhere that is not the server.*
+
+### Before the server dies (do this today)
+
+1. Take a fresh dump any time: `sudo grain-backup`
+2. Download it OFF the server (Bitvise → SFTP window →
+   `/var/backups/grain-tracker/`): grab the newest
+   `graintracker-<date>.sql.gz` to your PC. Weekly is fine; do it
+   before any planned wipe or provider migration.
+3. Optional but handy: save a copy of `/opt/gtv9-deploy/.env`
+   (`sudo cat /opt/gtv9-deploy/.env > gtv9-env-backup.txt`, then SFTP it
+   down) — it holds your app admin password and settings for reference.
+4. If you use the main-office portal, it also holds a mirrored copy of
+   farmers/lots and every end-of-day report.
+
+### After the wipe — full rebuild
+
+1. Create a fresh **Ubuntu 24.04** VPS, note the new IP. If you use a
+   domain, point its DNS A record at the new IP now (HTTPS renews
+   automatically once the new server is up).
+2. Log in as root (Bitvise/PuTTY), then fetch and run the CURRENT
+   installer from GitHub — do not reuse an old copy on your PC:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/kurtimas/GTv9/main/gtv8-vps-setup.sh -o gtv8-vps-setup.sh
+   chmod +x gtv8-vps-setup.sh
+   ADMIN_PASSWORD='YourServerLoginPassword' ./gtv8-vps-setup.sh
+   ```
+   Check the CONFIG block first (nano) — `DOMAIN` and `TIMEZONE` matter.
+   This rebuilds everything: firewall, desktop, Docker, the app, HTTPS,
+   backups, auto-start. Note the printed **app admin password**.
+3. Upload your saved dump back to the server (Bitvise SFTP → drop
+   `graintracker-<date>.sql.gz` into `/home/vpsadmin/`).
+4. Restore the data into the fresh database:
+   ```bash
+   gunzip < /home/vpsadmin/graintracker-<date>.sql.gz | \
+     docker exec -i grain-mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" graintracker'
+   ```
+   That brings back every farmer, lot, weight sheet, load, and bin level.
+5. If you had a custom app admin password, re-set it and restart the app:
+   ```bash
+   sudo sed -i 's|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=YourAppPassword|' /opt/gtv9-deploy/.env
+   cd /opt/gtv9-deploy && docker compose up -d --force-recreate app
+   ```
+6. Verify in the browser: dashboard, a farmer, a sheet, bin levels.
+   Office-sync settings live in the database, so they come back with the
+   restore automatically.
+
+**If the server dies with no off-server backup**, the data is gone except
+for whatever the office portal mirrored — which is why step 2 above is
+the one habit that matters.
+
+---
+
 ## Appendix — What got installed (for the curious)
 
 - **Ubuntu 24.04** hardened: UFW firewall (only SSH/RDP/web ports open),
